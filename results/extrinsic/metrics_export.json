@@ -1,0 +1,120 @@
+{
+  "metadata": {
+    "started_at": "2026-02-03T13:51:51.036710",
+    "finished_at": "2026-02-03T13:51:55.677887",
+    "duration_seconds": 4.64
+  },
+  "summary": {
+    "total_triples_processed": 76,
+    "total_accepted": 57,
+    "total_rejected": 19,
+    "total_needs_review": 0,
+    "acceptance_rate": 0.75,
+    "rejection_rate": 0.25,
+    "review_rate": 0.0,
+    "total_processing_time_ms": 78.22,
+    "avg_processing_time_ms": 1.03
+  },
+  "stages": {
+    "stage1_rule_based": {
+      "stage_name": "rule_based",
+      "total_processed": 76,
+      "passed": 57,
+      "failed": 19,
+      "escalated": 0,
+      "pass_rate": 0.75,
+      "fail_rate": 0.25,
+      "escalation_rate": 0.0,
+      "avg_time_ms": 0.01,
+      "total_time_ms": 0.58,
+      "avg_confidence": 0.825,
+      "tokens_used": 0,
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "llm_calls": 0,
+      "avg_tokens_per_call": 0.0
+    },
+    "stage2_embedding": {
+      "stage_name": "embedding_based",
+      "total_processed": 57,
+      "passed": 57,
+      "failed": 0,
+      "escalated": 0,
+      "pass_rate": 1.0,
+      "fail_rate": 0.0,
+      "escalation_rate": 0.0,
+      "avg_time_ms": 0.02,
+      "total_time_ms": 1.0,
+      "avg_confidence": 0.8,
+      "tokens_used": 0,
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "llm_calls": 0,
+      "avg_tokens_per_call": 0.0
+    },
+    "stage3_llm": {
+      "stage_name": "llm_arbitration",
+      "total_processed": 0,
+      "passed": 0,
+      "failed": 0,
+      "escalated": 0,
+      "pass_rate": 0.0,
+      "fail_rate": 0.0,
+      "escalation_rate": 0.0,
+      "avg_time_ms": 0.0,
+      "total_time_ms": 0.0,
+      "avg_confidence": 0.0,
+      "tokens_used": 0,
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "llm_calls": 0,
+      "avg_tokens_per_call": 0.0
+    }
+  },
+  "entity_resolution": {
+    "total_comparisons": 0,
+    "duplicates_found": 0,
+    "merges_performed": 15,
+    "precision": 0.0,
+    "recall": 0.0,
+    "f1_score": 0.0,
+    "avg_similarity": 0.0,
+    "true_positives": 0,
+    "false_positives": 0,
+    "false_negatives": 0
+  },
+  "llm_usage": {
+    "total_tokens": 0,
+    "total_input_tokens": 0,
+    "total_output_tokens": 0,
+    "total_calls": 0,
+    "estimated_cost_usd": 0.0
+  },
+  "precision_recall": {
+    "stage1": {
+      "pass_rate": 0.75,
+      "fail_rate": 0.25,
+      "avg_confidence": 0.8249999999999998
+    },
+    "stage2": {
+      "pass_rate": 1.0,
+      "fail_rate": 0.0,
+      "avg_confidence": 0.7999999999999994
+    },
+    "stage3": {
+      "pass_rate": 0.0,
+      "fail_rate": 0.0,
+      "avg_confidence": 0.0
+    },
+    "entity_resolution": {
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1_score": 0.0
+    },
+    "overall": {
+      "acceptance_rate": 0.75,
+      "rejection_rate": 0.25,
+      "review_rate": 0.0
+    }
+  }
+}

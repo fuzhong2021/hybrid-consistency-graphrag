@@ -1,0 +1,18 @@
+
+\begin{table}[htbp]
+\centering
+\caption{Evaluation des dreistufigen Konsistenzmoduls}
+\label{tab:consistency-evaluation}
+\begin{tabular}{lrrrrr}
+\toprule
+\textbf{Stufe} & \textbf{Verarbeitet} & \textbf{Pass-Rate} & \textbf{Avg. Zeit (ms)} & \textbf{Avg. Konfidenz} & \textbf{Tokens} \\
+\midrule
+Regelbasiert & 76 & 75.0% & 0.0 & 82.50% & -- \\
+Embedding & 57 & 100.0% & 0.0 & 80.00% & -- \\
+LLM & 0 & 0.0% & 0.0 & 0.00% & 0 \\
+
+\midrule
+\textbf{Gesamt} & 76 & 75.0% & 1.0 & -- & 0 \\
+\bottomrule
+\end{tabular}
+\end{table}

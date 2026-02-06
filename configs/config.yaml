@@ -1,0 +1,48 @@
+# GraphRAG Pipeline Configuration
+
+llm:
+  provider: "openai"  # oder "local" für Ollama
+  model: "gpt-4-turbo-preview"
+  temperature: 0.0
+  max_tokens: 4096
+
+embeddings:
+  provider: "openai"
+  model: "text-embedding-3-small"
+  dimensions: 1536
+
+chunking:
+  method: "semantic"  # oder "fixed", "sentence"
+  chunk_size: 512
+  overlap: 50
+
+graph:
+  entity_types:
+    - "Person"
+    - "Organisation"
+    - "Ort"
+    - "Ereignis"
+    - "Dokument"
+    - "Konzept"
+  
+  relation_types:
+    - "ARBEITET_BEI"
+    - "BEFINDET_SICH_IN"
+    - "BETEILIGT_AN"
+    - "BEZIEHT_SICH_AUF"
+    - "IST_TEIL_VON"
+
+consistency:
+  validation_rules:
+    - "entity_type_check"
+    - "relation_validity"
+    - "temporal_consistency"
+    - "semantic_similarity_threshold"
+  
+  conflict_resolution: "llm_arbitration"  # oder "majority_vote", "recency"
+  similarity_threshold: 0.85
+
+retrieval:
+  strategy: "hybrid"  # graph + vector
+  max_hops: 2
+  top_k: 10

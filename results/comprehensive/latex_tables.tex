@@ -1,0 +1,68 @@
+% Comprehensive Evaluation — LaTeX-Tabellen
+
+% Generiert: 2026-02-05T21:23:42.521916
+
+
+% --- Strategie 1: Intrinsische Evaluation ---
+
+\begin{table}[htbp]
+\centering
+\caption{Intrinsische Evaluation: Fehlererkennung pro Fehlertyp}
+\label{tab:intrinsic-evaluation}
+\begin{tabular}{lrrrr}
+\toprule
+\textbf{Fehlertyp} & \textbf{Total} & \textbf{TP} & \textbf{FN} & \textbf{Recall} \\
+\midrule
+Duplicate Entity & 8 & 0 & 4 & 0.0\% \\
+Contradictory Fact & 2 & 0 & 1 & 0.0\% \\
+Schema Violation & 7 & 3 & 0 & 100.0\% \\
+Temporal Error & 1 & 1 & 0 & 100.0\% \\
+Invalid Relation & 0 & 0 & 0 & 0.0\% \\
+\midrule
+\multicolumn{5}{l}{\textbf{Gesamt:} Precision=100.0\%, Recall=44.4\%, F1=61.5\%, Accuracy=72.2\%} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+
+% --- Strategie 3: Graph-Qualität ---
+
+\begin{table}[htbp]
+\centering
+\caption{Graph-Qualität: Vorher vs.\ Nachher Konsistenzmodul}
+\label{tab:graph-quality}
+\begin{tabular}{lrrr}
+\toprule
+\textbf{Metrik} & \textbf{Vorher} & \textbf{Nachher} & \textbf{$\Delta$} \\
+\midrule
+Schema-Compliance & 100.0\% & 100.0\% & +0.0pp \\
+Self-Loops & 3 & 0 & -3 \\
+Entity-Duplikationsrate & 0.0\% & 0.0\% & +0.0pp \\
+Domain-Verletzungen & 18 & 0 & -18 \\
+$\varnothing$ Knotengrad & 3.43 & 3.46 & +0.03 \\
+Graph-Dichte & 0.0165 & 0.0190 & +0.0025 \\
+Isolierte Entitäten & 0 & 0 & +0 \\
+Entitäten & 105 & 92 & -13 \\
+Relationen & 180 & 159 & -21 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+
+% --- Strategie 4: Ablation Study ---
+
+\begin{table}[htbp]
+\centering
+\caption{Ablation Study: Information Quality pro Variante}
+\label{tab:ablation-info-quality}
+\begin{tabular}{lrrrrr}
+\toprule
+\textbf{Variante} & \textbf{Preservation} & \textbf{Removal} & \textbf{Precision} & \textbf{Recall} & \textbf{F1} \\
+\midrule
+BASELINE & 100.0\% & 0.0\% & 10.6\% & 100.0\% & 19.1\% \\
+STAGE1_ONLY & 79.0\% & 10.6\% & 9.4\% & 79.0\% & 16.9\% \\
+STAGE1_2 & 79.0\% & 10.6\% & 9.4\% & 79.0\% & 16.9\% \\
+FULL & 79.0\% & 10.6\% & 9.4\% & 79.0\% & 16.9\% \\
+\bottomrule
+\end{tabular}
+\end{table}

@@ -1,0 +1,53 @@
+{
+  "before": {
+    "schema_compliance_rate": 1.0,
+    "schema_compliant_entities": 105,
+    "total_entities": 105,
+    "schema_compliant_relations": 180,
+    "total_relations": 180,
+    "self_loop_count": 3,
+    "entity_duplication_rate": 0.0,
+    "unique_fingerprints": 105,
+    "total_entity_count": 105,
+    "domain_constraint_violations": 18,
+    "avg_degree": 3.4286,
+    "max_degree": 20,
+    "degree_std": 2.7598,
+    "density": 0.016484,
+    "isolated_entities": 0
+  },
+  "after": {
+    "schema_compliance_rate": 1.0,
+    "schema_compliant_entities": 92,
+    "total_entities": 92,
+    "schema_compliant_relations": 159,
+    "total_relations": 159,
+    "self_loop_count": 0,
+    "entity_duplication_rate": 0.0,
+    "unique_fingerprints": 92,
+    "total_entity_count": 92,
+    "domain_constraint_violations": 0,
+    "avg_degree": 3.4565,
+    "max_degree": 20,
+    "degree_std": 2.7835,
+    "density": 0.018992,
+    "isolated_entities": 0
+  },
+  "delta": {
+    "schema_compliance_rate": 0.0,
+    "self_loop_count": -3,
+    "entity_duplication_rate": 0.0,
+    "domain_constraint_violations": -18,
+    "avg_degree": 0.02795,
+    "density": 0.002508,
+    "isolated_entities": 0,
+    "total_entities": -13,
+    "total_relations": -21
+  },
+  "pct_change": {
+    "schema_compliance_rate": "+0.0%",
+    "self_loop_count": "-100.0%",
+    "domain_constraint_violations": "-100.0%",
+    "density": "+15.2%"
+  }
+}

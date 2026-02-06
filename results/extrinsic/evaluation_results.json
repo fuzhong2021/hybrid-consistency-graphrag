@@ -1,0 +1,872 @@
+{
+  "timestamp": "2026-02-03T14:51:55.676025",
+  "statistics": {
+    "examples_processed": 20,
+    "triples_extracted": 76,
+    "triples_accepted": 57,
+    "triples_rejected": 19,
+    "triples_review": 0,
+    "entities_created": 48,
+    "relations_created": 57,
+    "processing_time_ms": 82.701
+  },
+  "orchestrator_metrics": {
+    "summary": {
+      "total_processed": 76,
+      "accepted": 57,
+      "rejected": 19,
+      "needs_review": 0,
+      "acceptance_rate": "75.0%",
+      "rejection_rate": "25.0%",
+      "review_rate": "0.0%"
+    },
+    "stage_breakdown": {
+      "stage1_rule_based": {
+        "processed": 76,
+        "pass_rate": "75.0%",
+        "avg_time_ms": "0.01",
+        "avg_confidence": "82.50%"
+      },
+      "stage2_embedding": {
+        "processed": 57,
+        "pass_rate": "100.0%",
+        "avg_time_ms": "0.02",
+        "avg_confidence": "80.00%"
+      },
+      "stage3_llm": {
+        "processed": 0,
+        "pass_rate": "0.0%",
+        "avg_time_ms": "0.00",
+        "avg_confidence": "0.00%",
+        "total_llm_calls": 0,
+        "total_tokens": 0
+      }
+    },
+    "entity_resolution": {
+      "total_comparisons": 0,
+      "duplicates_found": 0,
+      "merges_performed": 15,
+      "precision": "0.00%",
+      "recall": "0.00%",
+      "f1_score": "0.00%"
+    },
+    "llm_costs": {
+      "total_tokens": 0,
+      "estimated_cost_usd": "$0.0000"
+    },
+    "performance": {
+      "total_time_ms": "78.22",
+      "avg_time_per_triple_ms": "1.03"
+    },
+    "confidence_histograms": {
+      "stage1": [
+        0,
+        0,
+        19,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        57
+      ],
+      "stage2": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        57,
+        0
+      ],
+      "stage3": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "final": [
+        0,
+        0,
+        19,
+        0,
+        0,
+        0,
+        0,
+        0,
+        57,
+        0
+      ]
+    }
+  },
+  "graph_stats": {
+    "total_entities": 48,
+    "valid_entities": 48,
+    "total_relations": 57,
+    "valid_relations": 57
+  },
+  "detailed_results": [
+    {
+      "example_id": "5a8b57f25542995d1e6f1371",
+      "question": "Were Scott Derrickson and Ed Wood of the same nationality?",
+      "answer": "yes",
+      "num_hops": 2,
+      "triples_extracted": 3,
+      "triples_accepted": 3,
+      "triples_rejected": 0,
+      "validation_details": [
+        {
+          "subject": "Scott Derrickson",
+          "predicate": "VERWANDT_MIT",
+          "object": "Ed Wood",
+          "status": "accepted",
+          "conflicts": 0
+        },
+        {
+          "subject": "Scott Derrickson",
+          "predicate": "RELATED_TO",
+          "object": "yes",
+          "status": "accepted",
+          "conflicts": 0
+        },
+        {
+          "subject": "Ed Wood",
+          "predicate": "RELATED_TO",
+          "object": "yes",
+          "status": "accepted",
+          "conflicts": 0
+        }
+      ]
+    },
+    {
+      "example_id": "5a8c7595554299585d9e36b6",
+      "question": "What government position was held by the woman who portrayed Corliss Archer in the film Kiss and Tell?",
+      "answer": "Chief of Protocol",
+      "num_hops": 3,
+      "triples_extracted": 5,
+      "triples_accepted": 4,
+      "triples_rejected": 1,
+      "validation_details": [
+        {
+          "subject": "Kiss and Tell (1945 film)",
+          "predicate": "REGIE_BEI",
+          "object": "Shirley Temple",
+          "status": "accepted",
+          "conflicts": 0
+        },
+        {
+          "subject": "Shirley Temple",
+          "predicate": "REGIE_BEI",
+          "object": "Shirley Temple",
+          "status": "rejected",
+          "conflicts": 1
+        },
+        {
+          "subject": "Kiss and Tell (1945 film)",
+          "predicate": "RELATED_TO",
+          "object": "Chief of Protocol",
+          "status": "accepted",
+          "conflicts": 0
+        },
+        {
+          "subject": "Shirley Temple",
+          "predicate": "RELATED_TO",
+          "object": "Chief of Protocol",
+          "status": "accepted",
+          "conflicts": 0
+        },
+        {
+          "subject": "Shirley Temple",
+          "predicate": "RELATED_TO",
+          "object": "Chief of Protocol",
+          "status": "accepted",
+          "conflicts": 0
+        }
+      ]
+    },
+    {
+      "example_id": "5a85ea095542994775f606a8",
+      "question": "What science fantasy young adult series, told in first person, has a set of companion books narrating the stories of enslaved worlds and alien species?",
+      "answer": "Animorphs",
+      "num_hops": 5,
+      "triples_extracted": 9,
+      "triples_accepted": 4,
+      "triples_rejected": 5,
+      "validation_details": [
+        {
+          "subject": "The Hork-Bajir Chronicles",
+          "predicate": "VERWANDT_MIT",
+          "object": "The Hork-Bajir Chronicles",
+          "status": "rejected",
+          "conflicts": 1
+        },
+        {
+          "subject": "The Hork-Bajir Chronicles",
+          "predicate": "VERWANDT_MIT",
+          "object": "The Hork-Bajir Chronicles",
+          "status": "rejected",
+          "conflicts": 1
+        },
+        {
+          "subject": "The Hork-Bajir Chronicles",
+          "predicate": "VERWANDT_MIT",
+          "object": "Animorphs",
+          "status": "accepted",
+          "conflicts": 0
+        },
+        {
+          "subject": "Animorphs",
+          "predicate": "VERWANDT_MIT",
+          "object": "Animorphs",
+          "status": "rejected",
+          "conflicts": 1
+        },
+        {
+          "subject": "The Hork-Bajir Chronicles",
+          "predicate": "RELATED_TO",
+          "object": "Animorphs",
+          "status": "accepted",
+          "conflicts": 0
+        },
+        {
+          "subject": "The Hork-Bajir Chronicles",
+          "predicate": "RELATED_TO",
+          "object": "Animorphs",
+          "status": "accepted",
+          "conflicts": 0
+        },
+        {
+          "subject": "The Hork-Bajir Chronicles",
+          "predicate": "RELATED_TO",
+          "object": "Animorphs",
+          "status": "accepted",
+          "conflicts": 0
+        },
+        {
+          "subject": "Animorphs",
+          "predicate": "RELATED_TO",
+          "object": "Animorphs",
+          "status": "rejected",
+          "conflicts": 1
+        },
+        {
+          "subject": "Animorphs",
+          "predicate": "RELATED_TO",
+          "object": "Animorphs",
+          "status": "rejected",
+          "conflicts": 1
+        }
+      ]
+    },
+    {
+      "example_id": "5adbf0a255429947ff17385a",
+      "question": "Are the Laleli Mosque and Esma Sultan Mansion located in the same neighborhood?",
+      "answer": "no",
+      "num_hops": 2,
+      "triples_extracted": 1,
+      "triples_accepted": 0,
+      "triples_rejected": 1,
+      "validation_details": [
+        {
+          "subject": "Laleli Mosque",
+          "predicate": "BEFINDET_SICH_IN",
+          "object": "Esma Sultan Mansion",
+          "status": "rejected",
+          "conflicts": 1
+        }
+      ]
+    },
+    {
+      "example_id": "5a8e3ea95542995a26add48d",
+      "question": "The director of the romantic comedy \"Big Stone Gap\" is based in what New York city?",
+      "answer": "Greenwich Village, New York City",
+      "num_hops": 2,
+      "triples_extracted": 3,
+      "triples_accepted": 3,
+      "triples_rejected": 0,
+      "validation_details": [
+        {
+          "subject": "Big Stone Gap (film)",
+          "predicate": "REGIE_BEI",
+          "object": "Adriana Trigiani",
+          "status": "accepted",
+          "conflicts": 0
+        },
+        {
+          "subject": "Big Stone Gap (film)",
+          "predicate": "RELATED_TO",
+          "object": "Greenwich Village, New York City",
+          "status": "accepted",
+          "conflicts": 0
+        },
+        {
+          "subject": "Adriana Trigiani",
+          "predicate": "RELATED_TO",
+          "object": "Greenwich Village, New York City",
+          "status": "accepted",
+          "conflicts": 0
+        }
+      ]
+    },
+    {
+      "example_id": "5abd94525542992ac4f382d2",
+      "question": "2014 S/S is the debut album of a South Korean boy group that was formed by who?",
+      "answer": "YG Entertainment",
+      "num_hops": 2,
+      "triples_extracted": 3,
+      "triples_accepted": 3,
+      "triples_rejected": 0,
+      "validation_details": [
+        {
+          "subject": "2014 S/S",
+          "predicate": "RELATED_TO",
+          "object": "Winner (band)",
+          "status": "accepted",
+          "conflicts": 0
+        },
+        {
+          "subject": "2014 S/S",
+          "predicate": "RELATED_TO",
+          "object": "YG Entertainment",
+          "status": "accepted",
+          "conflicts": 0
+        },
+        {
+          "subject": "Winner (band)",
+          "predicate": "RELATED_TO",
+          "object": "YG Entertainment",
+          "status": "accepted",
+          "conflicts": 0
+        }
+      ]
+    },
+    {
+      "example_id": "5a85b2d95542997b5ce40028",
+      "question": "Who was known by his stage name Aladin and helped organizations improve their performance as a consultant?",
+      "answer": "Eenasul Fateh",
+      "num_hops": 2,
+      "triples_extracted": 3,
+      "triples_accepted": 2,
+      "triples_rejected": 1,
+      "validation_details": [
+        {
+          "subject": "Eenasul Fateh",
+          "predicate": "RELATED_TO",
+          "object": "Management consulting",
+          "status": "accepted",
+          "conflicts": 0
+        },
+        {
+          "subject": "Eenasul Fateh",
+          "predicate": "RELATED_TO",
+          "object": "Eenasul Fateh",
+          "status": "rejected",
+          "conflicts": 1
+        },
+        {
+          "subject": "Management consulting",
+          "predicate": "RELATED_TO",
+          "object": "Eenasul Fateh",
+          "status": "accepted",
+          "conflicts": 0
+        }
+      ]
+    },
+    {
+      "example_id": "5a87ab905542996e4f3088c1",
+      "question": "The arena where the Lewiston Maineiacs played their home games can seat how many people?",
+      "answer": "3,677 seated",
+      "num_hops": 2,
+      "triples_extracted": 3,
+      "triples_accepted": 2,
+      "triples_rejected": 1,
+      "validation_details": [
+        {
+          "subject": "Lewiston Maineiacs",
+          "predicate": "BEFINDET_SICH_IN",
+          "object": "Androscoggin Bank Colisée",
+          "status": "rejected",
+          "conflicts": 1
+        },
+        {
+          "subject": "Lewiston Maineiacs",
+          "predicate": "RELATED_TO",
+          "object": "3,677 seated",
+          "status": "accepted",
+          "conflicts": 0
+        },
+        {
+          "subject": "Androscoggin Bank Colisée",
+          "predicate": "RELATED_TO",
+          "object": "3,677 seated",
+          "status": "accepted",
+          "conflicts": 0
+        }
+      ]
+    },
+    {
+      "example_id": "5a7bbb64554299042af8f7cc",
+      "question": "Who is older, Annie Morton or Terry Richardson?",
+      "answer": "Terry Richardson",
+      "num_hops": 3,
+      "triples_extracted": 5,
+      "triples_accepted": 3,
+      "triples_rejected": 2,
+      "validation_details": [
+        {
+          "subject": "Annie Morton",
+          "predicate": "VERWANDT_MIT",
+          "object": "Annie Morton",
+          "status": "rejected",
+          "conflicts": 1
+        },
+        {
+          "subject": "Annie Morton",
+          "predicate": "VERWANDT_MIT",
+          "object": "Terry Richardson",
+          "status": "accepted",
+          "conflicts": 0
+        },
+        {
+          "subject": "Annie Morton",
+          "predicate": "RELATED_TO",
+          "object": "Terry Richardson",
+          "status": "accepted",
+          "conflicts": 0
+        },
+        {
+          "subject": "Annie Morton",
+          "predicate": "RELATED_TO",
+          "object": "Terry Richardson",
+          "status": "accepted",
+          "conflicts": 0
+        },
+        {
+          "subject": "Terry Richardson",
+          "predicate": "RELATED_TO",
+          "object": "Terry Richardson",
+          "status": "rejected",
+          "conflicts": 1
+        }
+      ]
+    },
+    {
+      "example_id": "5a8db19d5542994ba4e3dd00",
+      "question": "Are Local H and For Against both from the United States?",
+      "answer": "yes",
+      "num_hops": 2,
+      "triples_extracted": 3,
+      "triples_accepted": 3,
+      "triples_rejected": 0,
+      "validation_details": [
+        {
+          "subject": "Local H",
+          "predicate": "RELATED_TO",
+          "object": "For Against",
+          "status": "accepted",
+          "conflicts": 0
+        },
+        {
+          "subject": "Local H",
+          "predicate": "RELATED_TO",
+          "object": "yes",
+          "status": "accepted",
+          "conflicts": 0
+        },
+        {
+          "subject": "For Against",
+          "predicate": "RELATED_TO",
+          "object": "yes",
+          "status": "accepted",
+          "conflicts": 0
+        }
+      ]
+    },
+    {
+      "example_id": "5a7166395542994082a3e814",
+      "question": "What is the name of the fight song of the university whose main campus is in Lawrence, Kansas and whose branch campuses are in the Kansas City metropolitan area?",
+      "answer": "Kansas Song",
+      "num_hops": 3,
+      "triples_extracted": 5,
+      "triples_accepted": 3,
+      "triples_rejected": 2,
+      "validation_details": [
+        {
+          "subject": "Kansas Song",
+          "predicate": "VERWANDT_MIT",
+          "object": "University of Kansas",
+          "status": "accepted",
+          "conflicts": 0
+        },
+        {
+          "subject": "University of Kansas",
+          "predicate": "VERWANDT_MIT",
+          "object": "University of Kansas",
+          "status": "rejected",
+          "conflicts": 1
+        },
+        {
+          "subject": "Kansas Song",
+          "predicate": "RELATED_TO",
+          "object": "Kansas Song",
+          "status": "rejected",
+          "conflicts": 1
+        },
+        {
+          "subject": "University of Kansas",
+          "predicate": "RELATED_TO",
+          "object": "Kansas Song",
+          "status": "accepted",
+          "conflicts": 0
+        },
+        {
+          "subject": "University of Kansas",
+          "predicate": "RELATED_TO",
+          "object": "Kansas Song",
+          "status": "accepted",
+          "conflicts": 0
+        }
+      ]
+    },
+    {
+      "example_id": "5a877e5d5542993e715abf7d",
+      "question": "What screenwriter with credits for \"Evolution\" co-wrote a film starring Nicolas Cage and Téa Leoni?",
+      "answer": "David Weissman",
+      "num_hops": 3,
+      "triples_extracted": 5,
+      "triples_accepted": 2,
+      "triples_rejected": 3,
+      "validation_details": [
+        {
+          "subject": "David Weissman",
+          "predicate": "REGIE_BEI",
+          "object": "David Weissman",
+          "status": "rejected",
+          "conflicts": 1
+        },
+        {
+          "subject": "David Weissman",
+          "predicate": "REGIE_BEI",
+          "object": "The Family Man",
+          "status": "accepted",
+          "conflicts": 0
+        },
+        {
+          "subject": "David Weissman",
+          "predicate": "RELATED_TO",
+          "object": "David Weissman",
+          "status": "rejected",
+          "conflicts": 1
+        },
+        {
+          "subject": "David Weissman",
+          "predicate": "RELATED_TO",
+          "object": "David Weissman",
+          "status": "rejected",
+          "conflicts": 1
+        },
+        {
+          "subject": "The Family Man",
+          "predicate": "RELATED_TO",
+          "object": "David Weissman",
+          "status": "accepted",
+          "conflicts": 0
+        }
+      ]
+    },
+    {
+      "example_id": "5ab3b0bf5542992ade7c6e39",
+      "question": "What year did Guns N Roses perform a promo for a movie starring Arnold Schwarzenegger as a former New York Police detective?",
+      "answer": "1999",
+      "num_hops": 3,
+      "triples_extracted": 5,
+      "triples_accepted": 4,
+      "triples_rejected": 1,
+      "validation_details": [
+        {
+          "subject": "Oh My God (Guns N' Roses song)",
+          "predicate": "REGIE_BEI",
+          "object": "Oh My God (Guns N' Roses song)",
+          "status": "rejected",
+          "conflicts": 1
+        },
+        {
+          "subject": "Oh My God (Guns N' Roses song)",
+          "predicate": "REGIE_BEI",
+          "object": "End of Days (film)",
+          "status": "accepted",
+          "conflicts": 0
+        },
+        {
+          "subject": "Oh My God (Guns N' Roses song)",
+          "predicate": "RELATED_TO",
+          "object": "1999",
+          "status": "accepted",
+          "conflicts": 0
+        },
+        {
+          "subject": "Oh My God (Guns N' Roses song)",
+          "predicate": "RELATED_TO",
+          "object": "1999",
+          "status": "accepted",
+          "conflicts": 0
+        },
+        {
+          "subject": "End of Days (film)",
+          "predicate": "RELATED_TO",
+          "object": "1999",
+          "status": "accepted",
+          "conflicts": 0
+        }
+      ]
+    },
+    {
+      "example_id": "5ab56e32554299637185c594",
+      "question": "Are Random House Tower and 888 7th Avenue both used for real estate?",
+      "answer": "no",
+      "num_hops": 2,
+      "triples_extracted": 1,
+      "triples_accepted": 1,
+      "triples_rejected": 0,
+      "validation_details": [
+        {
+          "subject": "Random House Tower",
+          "predicate": "RELATED_TO",
+          "object": "888 7th Avenue",
+          "status": "accepted",
+          "conflicts": 0
+        }
+      ]
+    },
+    {
+      "example_id": "5ab6d09255429954757d337d",
+      "question": "The football manager who recruited David Beckham managed Manchester United during what timeframe?",
+      "answer": "from 1986 to 2013",
+      "num_hops": 3,
+      "triples_extracted": 5,
+      "triples_accepted": 4,
+      "triples_rejected": 1,
+      "validation_details": [
+        {
+          "subject": "1995–96 Manchester United F.C. season",
+          "predicate": "RELATED_TO",
+          "object": "1995–96 Manchester United F.C. season",
+          "status": "rejected",
+          "conflicts": 1
+        },
+        {
+          "subject": "1995–96 Manchester United F.C. season",
+          "predicate": "RELATED_TO",
+          "object": "Alex Ferguson",
+          "status": "accepted",
+          "conflicts": 0
+        },
+        {
+          "subject": "1995–96 Manchester United F.C. season",
+          "predicate": "RELATED_TO",
+          "object": "from 1986 to 2013",
+          "status": "accepted",
+          "conflicts": 0
+        },
+        {
+          "subject": "1995–96 Manchester United F.C. season",
+          "predicate": "RELATED_TO",
+          "object": "from 1986 to 2013",
+          "status": "accepted",
+          "conflicts": 0
+        },
+        {
+          "subject": "Alex Ferguson",
+          "predicate": "RELATED_TO",
+          "object": "from 1986 to 2013",
+          "status": "accepted",
+          "conflicts": 0
+        }
+      ]
+    },
+    {
+      "example_id": "5a75e05c55429976ec32bc5f",
+      "question": "Brown State Fishing Lake is in a country that has a population of how many inhabitants ?",
+      "answer": "9,984",
+      "num_hops": 2,
+      "triples_extracted": 3,
+      "triples_accepted": 3,
+      "triples_rejected": 0,
+      "validation_details": [
+        {
+          "subject": "Brown State Fishing Lake",
+          "predicate": "RELATED_TO",
+          "object": "Brown County, Kansas",
+          "status": "accepted",
+          "conflicts": 0
+        },
+        {
+          "subject": "Brown State Fishing Lake",
+          "predicate": "RELATED_TO",
+          "object": "9,984",
+          "status": "accepted",
+          "conflicts": 0
+        },
+        {
+          "subject": "Brown County, Kansas",
+          "predicate": "RELATED_TO",
+          "object": "9,984",
+          "status": "accepted",
+          "conflicts": 0
+        }
+      ]
+    },
+    {
+      "example_id": "5ab3e45655429976abd1bcd4",
+      "question": "The Vermont Catamounts men's soccer team currently competes in a conference that was formerly known as what from 1988 to 1996?",
+      "answer": "the North Atlantic Conference",
+      "num_hops": 3,
+      "triples_extracted": 5,
+      "triples_accepted": 4,
+      "triples_rejected": 1,
+      "validation_details": [
+        {
+          "subject": "Vermont Catamounts men's soccer",
+          "predicate": "RELATED_TO",
+          "object": "Vermont Catamounts men's soccer",
+          "status": "rejected",
+          "conflicts": 1
+        },
+        {
+          "subject": "Vermont Catamounts men's soccer",
+          "predicate": "TEILNAHME_AN",
+          "object": "America East Conference",
+          "status": "accepted",
+          "conflicts": 0
+        },
+        {
+          "subject": "Vermont Catamounts men's soccer",
+          "predicate": "RELATED_TO",
+          "object": "the North Atlantic Conference",
+          "status": "accepted",
+          "conflicts": 0
+        },
+        {
+          "subject": "Vermont Catamounts men's soccer",
+          "predicate": "RELATED_TO",
+          "object": "the North Atlantic Conference",
+          "status": "accepted",
+          "conflicts": 0
+        },
+        {
+          "subject": "America East Conference",
+          "predicate": "RELATED_TO",
+          "object": "the North Atlantic Conference",
+          "status": "accepted",
+          "conflicts": 0
+        }
+      ]
+    },
+    {
+      "example_id": "5ab29c24554299449642c932",
+      "question": "Are Giuseppe Verdi and Ambroise Thomas both Opera composers ?",
+      "answer": "yes",
+      "num_hops": 2,
+      "triples_extracted": 3,
+      "triples_accepted": 3,
+      "triples_rejected": 0,
+      "validation_details": [
+        {
+          "subject": "Giuseppe Verdi",
+          "predicate": "RELATED_TO",
+          "object": "Ambroise Thomas",
+          "status": "accepted",
+          "conflicts": 0
+        },
+        {
+          "subject": "Giuseppe Verdi",
+          "predicate": "RELATED_TO",
+          "object": "yes",
+          "status": "accepted",
+          "conflicts": 0
+        },
+        {
+          "subject": "Ambroise Thomas",
+          "predicate": "RELATED_TO",
+          "object": "yes",
+          "status": "accepted",
+          "conflicts": 0
+        }
+      ]
+    },
+    {
+      "example_id": "5ae0d4c9554299603e418468",
+      "question": "Roger O. Egeberg was Assistant Secretary for Health and Scientific Affairs during the administration of a president that served during what years?",
+      "answer": "1969 until 1974",
+      "num_hops": 2,
+      "triples_extracted": 3,
+      "triples_accepted": 3,
+      "triples_rejected": 0,
+      "validation_details": [
+        {
+          "subject": "Roger O. Egeberg",
+          "predicate": "RELATED_TO",
+          "object": "Richard Nixon",
+          "status": "accepted",
+          "conflicts": 0
+        },
+        {
+          "subject": "Roger O. Egeberg",
+          "predicate": "RELATED_TO",
+          "object": "1969 until 1974",
+          "status": "accepted",
+          "conflicts": 0
+        },
+        {
+          "subject": "Richard Nixon",
+          "predicate": "RELATED_TO",
+          "object": "1969 until 1974",
+          "status": "accepted",
+          "conflicts": 0
+        }
+      ]
+    },
+    {
+      "example_id": "5a8133725542995ce29dcbdb",
+      "question": "Which writer was from England, Henry Roth or Robert Erskine Childers?",
+      "answer": "Robert Erskine Childers DSC",
+      "num_hops": 2,
+      "triples_extracted": 3,
+      "triples_accepted": 3,
+      "triples_rejected": 0,
+      "validation_details": [
+        {
+          "subject": "Henry Roth",
+          "predicate": "VERWANDT_MIT",
+          "object": "Robert Erskine Childers",
+          "status": "accepted",
+          "conflicts": 0
+        },
+        {
+          "subject": "Henry Roth",
+          "predicate": "RELATED_TO",
+          "object": "Robert Erskine Childers",
+          "status": "accepted",
+          "conflicts": 0
+        },
+        {
+          "subject": "Robert Erskine Childers",
+          "predicate": "RELATED_TO",
+          "object": "Robert Erskine Childers",
+          "status": "accepted",
+          "conflicts": 0
+        }
+      ]
+    }
+  ]
+}

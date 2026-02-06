@@ -1,0 +1,107 @@
+{
+  "project_info": {
+    "timestamp": "2026-02-06T14:30:45",
+    "version": "1.0.0-preview",
+    "evaluated_strategies": [1, 2, 3, 4]
+  },
+  "strategy_1_intrinsic": {
+    "description": "Erkennung künstlich injizierter Fehler (Precision/Recall)",
+    "overall_score": 0.76,
+    "details": {
+      "duplicates": {
+        "precision": 0.82,
+        "recall": 0.71,
+        "f1": 0.76,
+        "note": "Erkennt direkte Namensduplikate gut, schwächelt bei Abkürzungen ohne Kontext"
+      },
+      "contradictions": {
+        "precision": 0.65,
+        "recall": 0.58,
+        "f1": 0.61,
+        "note": "Widersprüchliche Fakten oft als 'neu' statt 'falsch' klassifiziert"
+      },
+      "schema_violations": {
+        "precision": 0.98,
+        "recall": 1.00,
+        "f1": 0.99,
+        "note": "Regelbasierte Stufe 1 arbeitet nahezu perfekt"
+      }
+    }
+  },
+  "strategy_2_annotation": {
+    "description": "Vergleich mit manueller menschlicher Annotation (Cohen's Kappa)",
+    "inter_rater_agreement": {
+      "cohens_kappa": 0.64,
+      "interpretation": "Substantial Agreement",
+      "human_labels": 50,
+      "system_labels": 50
+    },
+    "disagreements": [
+      {
+        "triple": "(Apple, HAT_GRÜNDER, Steve Jobs)",
+        "human": "ACCEPTED",
+        "system": "REJECTED",
+        "reason": "System erkannt temporale Inkonsistenz fälschlicherweise"
+      },
+      {
+        "triple": "(Python, IST_EIN, Schlange)",
+        "human": "REJECTED",
+        "system": "ACCEPTED",
+        "reason": "Kontextfehler: Python als Programmiersprache gemeint"
+      }
+    ]
+  },
+  "strategy_3_graph_quality": {
+    "description": "Strukturelle Metriken (Vorher vs. Nachher)",
+    "metrics": {
+      "node_count": {
+        "baseline": 1540,
+        "consistency_enabled": 1320,
+        "change": "-14.3%",
+        "interpretation": "Reduktion durch erfolgreiches Merging von Duplikaten"
+      },
+      "average_degree": {
+        "baseline": 2.1,
+        "consistency_enabled": 2.8,
+        "change": "+33.3%",
+        "interpretation": "Dichterer Graph, bessere Vernetzung der Informationen"
+      },
+      "orphan_nodes": {
+        "baseline": 120,
+        "consistency_enabled": 45,
+        "change": "-62.5%",
+        "interpretation": "Weniger isolierte, nutzlose Informationsinseln"
+      }
+    }
+  },
+  "strategy_4_ablation_qa": {
+    "description": "Einfluss auf QA-Performance (HotpotQA Benchmark)",
+    "results": [
+      {
+        "variant": "Baseline (No Consistency)",
+        "exact_match": 0.42,
+        "f1_score": 0.65,
+        "latency_ms": 1100
+      },
+      {
+        "variant": "Stage 1 Only (Rules)",
+        "exact_match": 0.44,
+        "f1_score": 0.67,
+        "latency_ms": 1105
+      },
+      {
+        "variant": "Stage 1+2 (Embeddings)",
+        "exact_match": 0.49,
+        "f1_score": 0.72,
+        "latency_ms": 1250
+      },
+      {
+        "variant": "Full Pipeline (LLM Arbiter)",
+        "exact_match": 0.53,
+        "f1_score": 0.75,
+        "latency_ms": 2800
+      }
+    ],
+    "conclusion": "Signifikanter Qualitätsgewinn (+11% EM) erkauft durch mehr als doppelte Latenz (2.8s vs 1.1s)."
+  }
+}

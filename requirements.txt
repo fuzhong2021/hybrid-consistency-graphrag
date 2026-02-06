@@ -1,0 +1,36 @@
+# Core
+python-dotenv>=1.0.0
+pydantic>=2.5.0
+
+# LLM & Embeddings
+openai>=1.30.0
+langchain>=0.2.0
+langchain-openai>=0.1.0
+langchain-community>=0.2.0
+sentence-transformers>=2.2.0  # Lokale Embeddings für Entity Resolution
+
+# Graph Database
+neo4j>=5.20.0
+langchain-neo4j>=0.1.0
+
+# Vector Store
+chromadb>=0.5.0
+
+# Document Processing
+pypdf>=4.0.0
+tiktoken>=0.7.0
+
+# Data Processing
+pandas>=2.2.0
+numpy>=1.26.0
+
+# Visualization & Debugging
+networkx>=3.2.0
+matplotlib>=3.8.0
+tqdm>=4.66.0
+
+# YAML Config
+pyyaml>=6.0.0
+
+# Benchmark Loading (HotpotQA, MuSiQue)
+datasets>=2.14.0
