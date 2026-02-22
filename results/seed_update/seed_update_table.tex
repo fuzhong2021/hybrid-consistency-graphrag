@@ -1,0 +1,21 @@
+\begin{table}[htbp]
+\centering
+\caption{Seed + Update Evaluation: Konsistenzmodul-Wirksamkeit}
+\label{tab:seed-update-evaluation}
+\begin{tabular}{lrr}
+\toprule
+\textbf{Metrik} & \textbf{Seed} & \textbf{Update} \\
+\midrule
+Triples verarbeitet & 85 & 95 \\
+Akzeptiert & 85 & 84 \\
+Abgelehnt & 0 & 11 \\
+Akzeptanzrate & 100.0% & 88.4% \\
+\midrule
+\multicolumn{3}{l}{\textit{Ablehnungsgründe (Update):}} \\
+\quad Schema-Verletzung & — & 11 \\
+\quad Duplikat erkannt & — & 0 \\
+\quad Kardinalität & — & 0 \\
+\quad Temporal & — & 0 \\
+\bottomrule
+\end{tabular}
+\end{table}

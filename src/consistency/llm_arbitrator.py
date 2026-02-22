@@ -167,18 +167,12 @@ Analysiere den Konflikt und entscheide:
     def validate(self, triple: Triple, graph_repo: Any = None) -> StageResult:
         """
         Löst Konflikte mittels LLM-Analyse auf.
+
+        Wenn keine Konflikte vorliegen, wird trotzdem eine Faktenverifikation
+        durchgeführt um semantische Widersprüche zu erkennen.
         """
         start_time = time.time()
-        
-        # Wenn keine Konflikte vorliegen, direkt durchwinken
-        if not triple.conflicts:
-            return StageResult(
-                outcome=ValidationOutcome.PASS,
-                confidence=1.0,
-                processing_time_ms=(time.time() - start_time) * 1000,
-                details={"no_conflicts_to_resolve": True}
-            )
-        
+
         if not self.llm_client:
             logger.warning("Kein LLM-Client verfügbar - markiere für Human Review")
             return StageResult(
@@ -188,7 +182,58 @@ Analysiere den Konflikt und entscheide:
                 processing_time_ms=(time.time() - start_time) * 1000,
                 details={"skipped": True, "reason": "no_llm_client"}
             )
-        
+
+        # Wenn keine Konflikte vorliegen: Semantische Faktenverifikation durchführen
+        # Dies erkennt temporale, logische und Zustandswidersprüche
+        if not triple.conflicts:
+            fact_check = self._verify_semantic_consistency(triple, graph_repo)
+            processing_time = (time.time() - start_time) * 1000
+
+            if fact_check:
+                logger.info(f"Stufe 3 [{triple.subject.name}]: Faktencheck → "
+                           f"{'PASS' if fact_check.is_valid else 'FAIL'} "
+                           f"(Confidence: {fact_check.confidence:.0%})")
+
+                if fact_check.is_valid:
+                    return StageResult(
+                        outcome=ValidationOutcome.PASS,
+                        confidence=fact_check.confidence,
+                        processing_time_ms=processing_time,
+                        details={
+                            "fact_verification": True,
+                            "reasoning": fact_check.reasoning,
+                            "llm_calls": 1
+                        }
+                    )
+                else:
+                    # Semantischer Widerspruch erkannt!
+                    conflict = ConflictSet(
+                        conflict_type=ConflictType.CONTRADICTORY_RELATION,
+                        conflicting_items=[triple],
+                        description=f"Semantischer Widerspruch: {fact_check.reasoning}",
+                        severity=0.9
+                    )
+                    return StageResult(
+                        outcome=ValidationOutcome.FAIL,
+                        confidence=fact_check.confidence,
+                        conflicts=[conflict],
+                        processing_time_ms=processing_time,
+                        details={
+                            "fact_verification": True,
+                            "reasoning": fact_check.reasoning,
+                            "contradictions": fact_check.contradictions_found,
+                            "llm_calls": 1
+                        }
+                    )
+            else:
+                # Faktencheck fehlgeschlagen - UNCERTAIN
+                return StageResult(
+                    outcome=ValidationOutcome.UNCERTAIN,
+                    confidence=0.5,
+                    processing_time_ms=processing_time,
+                    details={"fact_verification_failed": True}
+                )
+
         # Jeden Konflikt einzeln arbitrieren
         resolved_conflicts = []
         resolutions = []
@@ -196,14 +241,19 @@ Analysiere den Konflikt und entscheide:
         
         for conflict in triple.conflicts:
             resolution = self._arbitrate_single_conflict(triple, conflict, graph_repo)
-            
+
             if resolution:
                 resolved_conflicts.append(conflict)
                 resolutions.append(resolution)
-                overall_confidence *= resolution.get("confidence", 0.5)
-                
-                # Konflikt als gelöst markieren
-                conflict.resolution = resolution.get("resolution")
+
+                # Unterstütze sowohl Dicts als auch LLMResolution Objekte
+                if isinstance(resolution, dict):
+                    overall_confidence *= resolution.get("confidence", 0.5)
+                    conflict.resolution = resolution.get("resolution")
+                else:
+                    # LLMResolution Objekt
+                    overall_confidence *= getattr(resolution, "confidence", 0.5)
+                    conflict.resolution = getattr(resolution, "resolution", None)
         
         # Outcome bestimmen basierend auf Resolutions
         outcome = self._determine_outcome(resolutions, overall_confidence)
@@ -473,6 +523,123 @@ Analysiere den Konflikt und entscheide:
 
         return "\n".join(context_parts) if context_parts else "Keine relevanten Fakten im Graph gefunden."
 
+    # Spezialisierter Prompt für semantische Widerspruchserkennung
+    SEMANTIC_CONSISTENCY_PROMPT = """Du bist ein Experte für logische Konsistenz in Knowledge Graphs.
+
+## Neues Triple (zu prüfen)
+- Subject: {subject_name}
+- Prädikat: {predicate}
+- Object: {object_name}
+- Quelltext: {source_text}
+
+## Bekannte Fakten im Graph
+{graph_context}
+
+## Deine Aufgabe
+Prüfe ob das neue Triple mit den bekannten Fakten **widerspricht**.
+
+WICHTIG:
+- Wenn keine relevanten Fakten im Graph sind → is_consistent: TRUE
+- Wenn das Triple neu und unabhängig ist → is_consistent: TRUE
+- Nur bei KLAREM WIDERSPRUCH zu bekannten Fakten → is_consistent: FALSE
+
+Mögliche Widerspruchstypen:
+
+1. **Temporale Widersprüche**: Ereignisse nach dem Tod, unmögliche Zeitabfolgen
+   - Beispiel: Person stirbt 1955, gewinnt aber Preis 1960 → WIDERSPRUCH
+
+2. **Zustandswidersprüche**: Inkompatible Zustände
+   - Beispiel: Person ist tot, heiratet aber später → WIDERSPRUCH
+
+3. **Logische Widersprüche**: Zyklische oder unmögliche Beziehungen
+   - Beispiel: Ehefrau ist gleichzeitig Mutter der gleichen Person → WIDERSPRUCH
+
+4. **Faktische Widersprüche**: Direkte Konflikte mit bekannten Fakten
+   - Beispiel: Geboren in Ulm, aber neues Triple sagt geboren in München → WIDERSPRUCH
+
+## Antwort (JSON-Format)
+{{
+    "is_consistent": true/false,
+    "confidence": 0.0-1.0,
+    "contradiction_type": null | "temporal" | "state" | "logical" | "factual",
+    "reasoning": "Deine Schritt-für-Schritt Begründung...",
+    "contradicting_facts": ["Fakt 1", "Fakt 2", ...]
+}}
+"""
+
+    def _verify_semantic_consistency(
+        self,
+        triple: Triple,
+        graph_repo: Any
+    ) -> Optional[LLMResolution]:
+        """
+        Prüft auf semantische Widersprüche (temporal, logisch, Zustand).
+
+        Wird aufgerufen wenn keine expliziten Konflikte vorliegen,
+        aber das LLM semantische Inkonsistenzen erkennen soll.
+        """
+        # Kontext sammeln
+        graph_context = self._gather_extended_context(triple, graph_repo)
+
+        prompt = self.SEMANTIC_CONSISTENCY_PROMPT.format(
+            subject_name=triple.subject.name,
+            predicate=triple.predicate,
+            object_name=triple.object.name,
+            source_text=triple.source_text or "Nicht verfügbar",
+            graph_context=graph_context
+        )
+
+        try:
+            start_time = time.time()
+
+            response = self.llm_client.chat.completions.create(
+                model=self.config.llm_model,
+                messages=[
+                    {
+                        "role": "system",
+                        "content": "Du prüfst Knowledge Graph Triples auf semantische Konsistenz. "
+                                   "Sei kritisch und erkenne Widersprüche. Antworte nur in validem JSON."
+                    },
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.0,
+                response_format={"type": "json_object"}
+            )
+
+            latency_ms = (time.time() - start_time) * 1000
+            usage_stats = self._extract_usage_stats(response, latency_ms)
+            self._record_usage(usage_stats)
+
+            result = json.loads(response.choices[0].message.content)
+
+            is_consistent = result.get("is_consistent", True)
+            confidence = result.get("confidence", 0.5)
+            contradiction_type = result.get("contradiction_type")
+            reasoning = result.get("reasoning", "")
+            contradicting_facts = result.get("contradicting_facts", [])
+
+            logger.debug(f"Semantische Prüfung: consistent={is_consistent}, "
+                        f"type={contradiction_type}, confidence={confidence:.0%}")
+
+            if is_consistent:
+                resolution = ResolutionAction.ACCEPT_NEW
+            else:
+                resolution = ResolutionAction.REJECT_BOTH
+
+            return LLMResolution(
+                is_valid=is_consistent,
+                confidence=confidence,
+                resolution=resolution,
+                reasoning=reasoning,
+                fact_check_result="consistent" if is_consistent else f"contradiction_{contradiction_type}",
+                contradictions_found=contradicting_facts,
+                usage_stats=usage_stats
+            )
+
+        except Exception as e:
+            logger.error(f"Semantische Konsistenzprüfung fehlgeschlagen: {e}")
+            return None
+
     def get_usage_summary(self) -> Dict[str, Any]:
         """Gibt eine Zusammenfassung der LLM-Nutzung zurück."""
         return {
@@ -524,15 +691,27 @@ Analysiere den Konflikt und entscheide:
         
         return "\n".join(context_parts) if context_parts else "Keine existierenden Relationen gefunden."
     
+    def _get_resolution_action(self, r) -> str:
+        """Hilfsmethode um resolution aus Dict oder LLMResolution zu lesen."""
+        if isinstance(r, dict):
+            return r.get("resolution", "")
+        else:
+            # LLMResolution Objekt - resolution ist ein ResolutionAction Enum
+            res = getattr(r, "resolution", None)
+            if res is None:
+                return ""
+            # ResolutionAction Enum zu String konvertieren
+            return res.value if hasattr(res, "value") else str(res)
+
     def _determine_outcome(self, resolutions: List[Dict], confidence: float) -> ValidationOutcome:
         """Bestimmt das finale Outcome basierend auf allen Resolutions."""
         if not resolutions:
             return ValidationOutcome.UNCERTAIN
-        
-        # Zähle Resolution-Typen
-        accept_count = sum(1 for r in resolutions if r.get("resolution") == "accept_new")
-        reject_count = sum(1 for r in resolutions if r.get("resolution") in ["keep_existing", "reject_both"])
-        review_count = sum(1 for r in resolutions if r.get("resolution") == "human_review")
+
+        # Zähle Resolution-Typen (unterstütze sowohl Dicts als auch LLMResolution Objekte)
+        accept_count = sum(1 for r in resolutions if self._get_resolution_action(r) == "accept_new")
+        reject_count = sum(1 for r in resolutions if self._get_resolution_action(r) in ["keep_existing", "reject_both"])
+        review_count = sum(1 for r in resolutions if self._get_resolution_action(r) == "human_review")
         
         # Entscheidungslogik
         if review_count > 0:

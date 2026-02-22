@@ -7,6 +7,11 @@ Semantische Analyse mittels Vektor-Embeddings:
 - Entity Resolution (Merge-Logik)
 - Semantische Konfliktprüfung
 
+Erweitert um fortgeschrittene Module:
+- TransE-basierte Plausibilitätsbewertung
+- Graph-Anomalie-Erkennung
+- Provenance-basierte Konfidenz-Gewichtung
+
 Basiert auf iText2KG (Lairgi et al., 2024): α = 0.6 für Name-Gewichtung.
 """
 
@@ -21,6 +26,11 @@ from src.models.entities import (
     EntityResolutionResult, MergeStrategy, merge_entities
 )
 from src.consistency.base import ValidationStage, StageResult, ValidationOutcome, ConsistencyConfig
+
+# Fortgeschrittene Module für Stage 2
+from src.consistency.embedding.transe_scorer import TransEScorer, TransEConfig
+from src.consistency.embedding.graph_anomaly import GraphAnomalyDetector, GraphAnomalyConfig
+from src.consistency.provenance import ProvenanceTracker, ProvenanceConfig
 
 logger = logging.getLogger(__name__)
 
@@ -335,25 +345,108 @@ class LocalEmbeddingModel:
         return self._model.get_sentence_embedding_dimension()
 
 
+class _SentenceTransformerWrapper:
+    """
+    Wrapper for raw SentenceTransformer to provide embed_query/embed_documents API.
+
+    This allows the EmbeddingValidator to work with both:
+    - Raw SentenceTransformer objects (which use encode())
+    - Wrapped models with embed_query/embed_documents interface
+    """
+
+    def __init__(self, model):
+        self._model = model
+
+    def embed_query(self, text: str) -> List[float]:
+        """Erstellt Embedding für einen Text."""
+        embedding = self._model.encode(text, convert_to_numpy=True)
+        return embedding.tolist()
+
+    def embed_documents(self, texts: List[str]) -> List[List[float]]:
+        """Erstellt Embeddings für mehrere Texte (Batch)."""
+        embeddings = self._model.encode(texts, convert_to_numpy=True)
+        return embeddings.tolist()
+
+    @property
+    def dimension(self) -> int:
+        """Dimension der Embeddings."""
+        return self._model.get_sentence_embedding_dimension()
+
+
 class EmbeddingValidator(ValidationStage):
     """Stufe 2: Embedding-basierte Duplikaterkennung."""
-    
+
     name = "embedding_based"
-    
+
     def __init__(self, config: ConsistencyConfig, embedding_model: Any = None):
         """
         Args:
             config: Konsistenz-Konfiguration
             embedding_model: Embedding-Modell (z.B. OpenAI, SentenceTransformers)
+                            Unterstützt sowohl raw SentenceTransformer als auch
+                            Wrapper mit embed_query/embed_documents Methoden.
         """
         self.config = config
-        self.embedding_model = embedding_model
         self.similarity_threshold = config.similarity_threshold
-        
+
+        # Wrap raw SentenceTransformer if needed
+        self.embedding_model = self._wrap_embedding_model(embedding_model)
+
         # Cache für Embeddings
         self._embedding_cache = {}
-        
+
+        # Fortgeschrittene Module initialisieren
+        # TransE Scorer - nutzt Embedding-Modell für Plausibilitätsbewertung
+        transe_config = TransEConfig(
+            embedding_dim=config.transe_embedding_dim,
+            anomaly_threshold=config.transe_anomaly_threshold,
+        )
+        self._transe_scorer = TransEScorer(
+            embedding_model=self.embedding_model,  # Use wrapped model
+            config=transe_config
+        )
+
+        # Graph Anomaly Detector - strukturelle Anomalie-Erkennung
+        anomaly_config = GraphAnomalyConfig(
+            degree_z_score_threshold=config.anomaly_zscore_threshold,
+        )
+        self._anomaly_detector = GraphAnomalyDetector(config=anomaly_config)
+
+        # Provenance Tracker - Quellen-Zuverlässigkeit und Corroboration
+        self._provenance_tracker = ProvenanceTracker(config=ProvenanceConfig())
+
+        # Flag um TransE aus Graph zu lernen (einmalig)
+        self._transe_learned_from_graph = False
+
         logger.info(f"EmbeddingValidator initialisiert (Threshold: {self.similarity_threshold})")
+        logger.info(f"  → TransE: {'aktiviert' if config.enable_transe else 'deaktiviert'}")
+        logger.info(f"  → Anomalie-Erkennung: {'aktiviert' if config.enable_anomaly_detection else 'deaktiviert'}")
+        logger.info(f"  → Provenance-Boost: {'aktiviert' if config.enable_provenance_boost else 'deaktiviert'}")
+
+    def _wrap_embedding_model(self, model: Any) -> Any:
+        """
+        Wraps raw SentenceTransformer in a compatible interface.
+
+        Handles:
+        - None → None
+        - Already has embed_query → return as-is
+        - Raw SentenceTransformer (has encode) → wrap it
+        """
+        if model is None:
+            return None
+
+        # Check if already has embed_query method
+        if hasattr(model, 'embed_query') and callable(getattr(model, 'embed_query')):
+            return model
+
+        # Check if it's a raw SentenceTransformer (has encode method)
+        if hasattr(model, 'encode') and callable(getattr(model, 'encode')):
+            logger.info("Wrapping raw SentenceTransformer in compatible interface")
+            return _SentenceTransformerWrapper(model)
+
+        # Unknown model type - return as-is and hope for the best
+        logger.warning(f"Unknown embedding model type: {type(model)}. May cause errors.")
+        return model
     
     def validate(self, triple: Triple, graph_repo: Any = None) -> StageResult:
         """
@@ -372,12 +465,20 @@ class EmbeddingValidator(ValidationStage):
         if graph_repo is None or not self.embedding_model:
             # Auch ohne Embedding-Modell können wir Provenance/Anomalie/TransE prüfen
             if graph_repo is not None:
-                # 4. Provenance Boost (#7)
+                # 4. Provenance Boost/Penalty (#7, #12)
                 if self.config.enable_provenance_boost:
-                    prov_multiplier = self._check_provenance(triple, graph_repo)
-                    if prov_multiplier > 1.0:
-                        confidence = min(1.0, confidence * prov_multiplier)
-                        details["provenance_boost"] = prov_multiplier
+                    prov_multiplier, prov_details = self._check_provenance(triple, graph_repo)
+                    # Immer Details speichern (auch für Penalties)
+                    details["provenance_multiplier"] = prov_multiplier
+                    details.update(prov_details)
+
+                    if prov_multiplier != 1.0:
+                        # Boost (>1.0) oder Penalty (<1.0) anwenden
+                        confidence = max(0.1, min(1.0, confidence * prov_multiplier))
+                        if prov_multiplier > 1.0:
+                            details["provenance_boost"] = prov_multiplier
+                        else:
+                            details["provenance_penalty"] = prov_multiplier
 
                 # 5. Anomalie-Erkennung (#8)
                 if self.config.enable_anomaly_detection:
@@ -394,6 +495,8 @@ class EmbeddingValidator(ValidationStage):
 
             if not self.embedding_model:
                 logger.warning("Embedding-Modell nicht verfügbar - Stufe 2 eingeschränkt")
+                # Ohne Embedding-Modell: PASS wenn keine Konflikte (effizient)
+                # LLM wird nur bei expliziten Konflikten aus Stage 1/2 aufgerufen
                 outcome = ValidationOutcome.CONFLICT if conflicts else ValidationOutcome.PASS
                 return StageResult(
                     outcome=outcome,
@@ -447,28 +550,41 @@ class EmbeddingValidator(ValidationStage):
                 confidence *= 0.3
 
         # 3. Prüfe auf widersprüchliche Relationen
-        if graph_repo:
+        if graph_repo is not None:
             relation_conflict = self._check_contradictory_relations(triple, graph_repo)
             if relation_conflict:
                 conflicts.append(relation_conflict)
                 confidence *= 0.5
 
-        # 4. Provenance Boost (#7)
-        if graph_repo and self.config.enable_provenance_boost:
-            prov_multiplier = self._check_provenance(triple, graph_repo)
-            if prov_multiplier > 1.0:
-                confidence = min(1.0, confidence * prov_multiplier)
-                details["provenance_boost"] = prov_multiplier
+        # 4. Provenance Boost/Penalty (#7, #12)
+        if graph_repo is not None and self.config.enable_provenance_boost:
+            try:
+                prov_multiplier, prov_details = self._check_provenance(triple, graph_repo)
+                logger.debug(f"Provenance result: multiplier={prov_multiplier}")
+            except Exception as e:
+                logger.error(f"Provenance check failed: {e}")
+                prov_multiplier, prov_details = 1.0, {}
+            # Immer Details speichern (auch für Penalties)
+            details["provenance_multiplier"] = prov_multiplier
+            details.update(prov_details)  # Enthält source_score, missing_source_penalty, etc.
+
+            if prov_multiplier != 1.0:
+                # Boost (>1.0) oder Penalty (<1.0) anwenden
+                confidence = max(0.1, min(1.0, confidence * prov_multiplier))
+                if prov_multiplier > 1.0:
+                    details["provenance_boost"] = prov_multiplier
+                else:
+                    details["provenance_penalty"] = prov_multiplier
 
         # 5. Anomalie-Erkennung (#8)
-        if graph_repo and self.config.enable_anomaly_detection:
+        if graph_repo is not None and self.config.enable_anomaly_detection:
             anomaly_conflict = self._check_anomalies(triple, graph_repo)
             if anomaly_conflict:
                 conflicts.append(anomaly_conflict)
                 confidence *= self.config.anomaly_confidence_penalty
 
         # 6. TransE Scoring (#10)
-        if graph_repo and self.config.enable_transe:
+        if graph_repo is not None and self.config.enable_transe:
             transe_conflict = self._check_transe(triple, graph_repo)
             if transe_conflict:
                 conflicts.append(transe_conflict)
@@ -752,20 +868,33 @@ class EmbeddingValidator(ValidationStage):
     # Provenance, Anomalie, TransE (#7, #8, #10)
     # =========================================================================
 
-    def _check_provenance(self, triple: Triple, graph_repo: Any) -> float:
+    def _check_provenance(self, triple: Triple, graph_repo: Any) -> Tuple[float, Dict[str, Any]]:
         """
-        Provenance-Boost (#7): Mehrfache Bestätigung durch verschiedene Quellen.
+        Provenance-basierte Konfidenz-Anpassung (#7).
 
-        Sucht existierende Relationen mit gleichem Subject+Predicate+Object
-        und zählt verschiedene source_document_id-Werte.
+        Nutzt den fortgeschrittenen ProvenanceTracker für:
+        - Source Quality Scoring
+        - Corroboration Tracking (Mehrfachbestätigung)
+        - Temporal Decay (optional)
+        - Conflict-aware Weighting
 
         Returns:
-            Multiplikator (1.0 = kein Boost, 1.1 = 2 Quellen, 1.2 = 3+ Quellen)
+            Tuple von (multiplier, details)
         """
+        # Berechne Provenance-adjustierte Konfidenz
+        adjusted_conf, prov_details = self._provenance_tracker.calculate_confidence(
+            triple,
+            base_confidence=triple.extraction_confidence
+        )
+
+        # Berechne den Multiplikator relativ zur Basis-Konfidenz
+        base = triple.extraction_confidence or 0.5
+        multiplier = adjusted_conf / base if base > 0 else 1.0
+
+        # Corroboration aus Graph prüfen (legacy Support)
         existing = graph_repo.find_relations(source_id=triple.subject.id)
         source_docs: Set[str] = set()
 
-        # Sammle source_document_ids von übereinstimmenden Relationen
         predicate_upper = triple.predicate.upper()
         for rel in existing:
             rel_type = rel.get("rel_type", "").upper()
@@ -776,136 +905,134 @@ class EmbeddingValidator(ValidationStage):
             if target_name.lower() != triple.object.name.lower():
                 continue
 
-            # Gefunden: gleiche Relation
             relation_obj = rel.get("relation")
             if relation_obj and hasattr(relation_obj, "source_document_id"):
                 if relation_obj.source_document_id:
                     source_docs.add(relation_obj.source_document_id)
 
-        # Füge die Quelle des neuen Triples hinzu
         if triple.source_document_id:
             source_docs.add(triple.source_document_id)
 
         n_sources = len(source_docs)
+
+        # Kombiniere beide Multiplikatoren
         if n_sources >= 3:
-            return self.config.provenance_boost_3_plus
+            graph_boost = self.config.provenance_boost_3_plus
         elif n_sources >= 2:
-            return self.config.provenance_boost_2_sources
-        return 1.0
+            graph_boost = self.config.provenance_boost_2_sources
+        else:
+            graph_boost = 1.0
+
+        final_multiplier = max(multiplier, graph_boost)
+
+        details = {
+            **prov_details,
+            "graph_corroboration_sources": n_sources,
+            "graph_boost": graph_boost,
+            "final_multiplier": final_multiplier,
+        }
+
+        return final_multiplier, details
 
     def _check_anomalies(self, triple: Triple, graph_repo: Any) -> Optional[ConflictSet]:
         """
-        Anomalie-Erkennung via Knotengrad-Statistik (#8).
+        Graph-basierte Anomalie-Erkennung (#8).
 
-        Berechnet den Z-Score des Subject-Knotengrads.
-        Entities mit ungewöhnlich vielen Relationen werden geflaggt.
+        Nutzt den fortgeschrittenen GraphAnomalyDetector für:
+        - Degree Anomaly - Entity hat ungewöhnlich viele/wenige Relationen
+        - Type Distribution Anomaly - Relation zwischen unüblichen Entity-Typen
+        - Cluster Bridge Anomaly - Triple verbindet normalerweise getrennte Cluster
+        - Relation Frequency Anomaly - Ungewöhnliche Häufigkeit eines Relationstyps
+
+        Returns:
+            ConflictSet wenn Anomalie erkannt, sonst None
         """
-        if not hasattr(graph_repo, 'find_all_entities'):
+        # Mindestens 20 Entitäten für sinnvolle Anomalie-Statistiken
+        min_entities_for_anomaly = 20
+        entity_count = 0
+        if hasattr(graph_repo, 'find_all_entities'):
+            try:
+                entity_count = len(graph_repo.find_all_entities())
+            except Exception:
+                pass
+
+        if entity_count < min_entities_for_anomaly:
+            logger.debug(f"Graph zu klein für Anomalie-Erkennung ({entity_count} < {min_entities_for_anomaly})")
             return None
 
-        # Cache-Key für Grad-Statistik
-        cache_key = "_anomaly_degree_cache"
-        if not hasattr(self, cache_key):
-            setattr(self, cache_key, {})
-        cache = getattr(self, cache_key)
+        # Aktualisiere Graph-Statistiken periodisch
+        self._anomaly_detector.update_statistics(graph_repo)
 
-        # Statistik berechnen (mit Caching)
-        stats = cache.get("stats")
-        if stats is None:
-            all_entities = graph_repo.find_all_entities()
-            if len(all_entities) < 10:
-                return None  # Zu wenig Daten für sinnvolle Statistik
+        # Prüfe auf alle Anomalie-Typen
+        conflicts = self._anomaly_detector.check_anomaly(triple, graph_repo)
 
-            degrees = []
-            degree_map = {}
-            for entity in all_entities:
-                rels = graph_repo.find_relations(source_id=entity.id)
-                deg = len(rels)
-                degrees.append(deg)
-                degree_map[entity.id] = deg
+        if conflicts:
+            # Kombiniere alle Anomalien in einen Konflikt
+            descriptions = [c.description for c in conflicts]
+            max_severity = max(c.severity for c in conflicts)
 
-            mean_degree = np.mean(degrees)
-            std_degree = np.std(degrees)
-
-            stats = {"mean": mean_degree, "std": std_degree, "degree_map": degree_map}
-            cache["stats"] = stats
-
-        mean_degree = stats["mean"]
-        std_degree = stats["std"]
-        degree_map = stats["degree_map"]
-
-        if std_degree == 0:
-            return None
-
-        # Z-Score des Subject-Knotengrads
-        subject_degree = degree_map.get(triple.subject.id, 0)
-        # +1 für die neue Relation
-        subject_degree += 1
-        z_score = (subject_degree - mean_degree) / std_degree
-
-        if abs(z_score) > self.config.anomaly_zscore_threshold:
             return ConflictSet(
                 conflict_type=ConflictType.CONTRADICTORY_RELATION,
-                description=f"Knotengrad-Anomalie: '{triple.subject.name}' hat Grad {subject_degree} "
-                           f"(Durchschnitt: {mean_degree:.1f}, Z-Score: {z_score:.2f}, "
-                           f"Threshold: {self.config.anomaly_zscore_threshold})",
-                severity=0.5
+                description=f"Graph-Anomalien erkannt ({len(conflicts)}): " +
+                           " | ".join(descriptions),
+                severity=max_severity
             )
+
+        # Zusätzlich: Anomalie-Score für feinere Bewertung (nur bei größeren Graphen)
+        if entity_count >= 50:
+            anomaly_score, score_details = self._anomaly_detector.score_triple(triple, graph_repo)
+
+            if anomaly_score >= self.config.anomaly_zscore_threshold / 5.0:  # Normalisiert
+                return ConflictSet(
+                    conflict_type=ConflictType.CONTRADICTORY_RELATION,
+                    description=f"Graph-Anomalie-Score: {anomaly_score:.2f} "
+                               f"(Threshold: {self.config.anomaly_zscore_threshold / 5.0:.2f}) - "
+                               f"Degree: {score_details.get('degree_score', 0):.2f}, "
+                               f"Type: {score_details.get('type_score', 0):.2f}, "
+                               f"Pair: {score_details.get('pair_score', 0):.2f}",
+                    severity=0.5 + anomaly_score * 0.3
+                )
 
         return None
 
     def _check_transe(self, triple: Triple, graph_repo: Any) -> Optional[ConflictSet]:
         """
-        TransE-Scoring (#10): Knowledge Graph Embedding-basierte Anomalie-Erkennung.
+        TransE-basierte Plausibilitätsbewertung (#10).
 
-        Trainiert ein leichtgewichtiges TransE-Modell und prüft ob der
-        neue Triple konsistent mit den gelernten Embeddings ist.
+        Nutzt den fortgeschrittenen TransEScorer für:
+        - Entity-Embedding-basierte Translation: h + r ≈ t
+        - Relation-Embedding aus Graph lernen
+        - Cosine-Fallback wenn keine Relation-Embeddings verfügbar
+
+        Returns:
+            ConflictSet wenn TransE-Anomalie erkannt, sonst None
         """
-        if not hasattr(graph_repo, 'find_all_entities'):
-            return None
+        # Lerne Relation-Embeddings aus Graph (einmalig)
+        if not self._transe_learned_from_graph and graph_repo:
+            try:
+                self._transe_scorer.learn_from_graph(graph_repo)
+                self._transe_learned_from_graph = True
+            except Exception as e:
+                logger.debug(f"TransE Graph-Learning fehlgeschlagen: {e}")
 
-        # Initialisiere TransE-Modell wenn nötig
-        if not hasattr(self, '_transe_model'):
-            self._transe_model = LightweightTransE(
-                embedding_dim=self.config.transe_embedding_dim,
-                learning_rate=self.config.transe_learning_rate
-            )
-            self._transe_triple_count = 0
+        # Prüfe auf TransE-Anomalie
+        conflict = self._transe_scorer.check_anomaly(triple, graph_repo)
+        if conflict:
+            return conflict
 
-        # Sammle alle existierenden Triples
-        all_entities = graph_repo.find_all_entities()
-        all_triples = []
-        for entity in all_entities:
-            rels = graph_repo.find_relations(source_id=entity.id)
-            for rel in rels:
-                target = rel.get("target", {})
-                target_id = target.get("id") if target else None
-                if target_id:
-                    all_triples.append((entity.id, rel.get("rel_type", ""), target_id))
+        # Zusätzlich: Score für feinere Bewertung
+        score, score_details = self._transe_scorer.score_triple(triple, graph_repo)
 
-        if len(all_triples) < self.config.transe_min_triples:
-            return None
-
-        # Retrain wenn nötig
-        if (not self._transe_model._trained or
-                len(all_triples) - self._transe_triple_count >= self.config.transe_retrain_interval):
-            self._transe_model.train(all_triples, epochs=self.config.transe_epochs)
-            self._transe_triple_count = len(all_triples)
-
-        # Score berechnen
-        score = self._transe_model.score(
-            triple.subject.id,
-            triple.predicate.upper(),
-            triple.object.id
-        )
-
-        if score > self.config.transe_anomaly_threshold:
+        # Nur wenn ein valider Score berechnet wurde (nicht Fallback)
+        if score_details.get("method") == "transe" and score >= self.config.transe_anomaly_threshold:
+            distance = score_details.get("distance", 0)
             return ConflictSet(
                 conflict_type=ConflictType.CONTRADICTORY_RELATION,
-                description=f"TransE-Anomalie: Triple ({triple.subject.name}, {triple.predicate}, "
-                           f"{triple.object.name}) hat Score {score:.2f} "
+                description=f"TransE-Plausibilität niedrig: "
+                           f"({triple.subject.name}, {triple.predicate}, {triple.object.name}) "
+                           f"Score: {score:.2f}, Distance: {distance:.2f} "
                            f"(Threshold: {self.config.transe_anomaly_threshold})",
-                severity=0.5
+                severity=0.5 + (score - self.config.transe_anomaly_threshold) * 0.3
             )
 
         return None

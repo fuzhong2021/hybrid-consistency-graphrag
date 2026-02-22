@@ -16,8 +16,10 @@ import math
 import logging
 import random
 import uuid
+import hashlib
+import time
 from dataclasses import dataclass, field
-from typing import List, Dict, Any, Optional, Tuple, Set
+from typing import List, Dict, Any, Optional, Tuple, Set, TYPE_CHECKING
 from collections import defaultdict
 from pathlib import Path
 
@@ -32,6 +34,69 @@ logger = logging.getLogger(__name__)
 
 
 # =============================================================================
+# Triple Cache for LLM Extractions
+# =============================================================================
+
+class TripleCache:
+    """
+    Caches extracted triples to avoid repeated LLM calls.
+
+    Cache is stored as JSON file and keyed by content hash.
+    """
+
+    def __init__(self, cache_dir: Path = None):
+        self.cache_dir = cache_dir or Path("results/cache")
+        self.cache_dir.mkdir(parents=True, exist_ok=True)
+        self.cache_file = self.cache_dir / "triple_extraction_cache.json"
+        self._cache: Dict[str, Any] = {}
+        self._load_cache()
+
+    def _load_cache(self):
+        """Load cache from disk."""
+        if self.cache_file.exists():
+            try:
+                with open(self.cache_file, "r", encoding="utf-8") as f:
+                    self._cache = json.load(f)
+                logger.info(f"Loaded {len(self._cache)} cached extractions")
+            except Exception as e:
+                logger.warning(f"Could not load cache: {e}")
+                self._cache = {}
+
+    def _save_cache(self):
+        """Save cache to disk."""
+        try:
+            with open(self.cache_file, "w", encoding="utf-8") as f:
+                json.dump(self._cache, f, ensure_ascii=False, indent=2)
+        except Exception as e:
+            logger.warning(f"Could not save cache: {e}")
+
+    def _hash_content(self, text: str) -> str:
+        """Generate hash for text content."""
+        return hashlib.md5(text.encode("utf-8")).hexdigest()[:16]
+
+    def get(self, example_id: str, paragraph_text: str) -> Optional[List[Dict]]:
+        """Get cached triples for a paragraph."""
+        key = f"{example_id}:{self._hash_content(paragraph_text)}"
+        return self._cache.get(key)
+
+    def set(self, example_id: str, paragraph_text: str, triples: List[Dict]):
+        """Cache triples for a paragraph."""
+        key = f"{example_id}:{self._hash_content(paragraph_text)}"
+        self._cache[key] = triples
+        # Save periodically (every 10 new entries)
+        if len(self._cache) % 10 == 0:
+            self._save_cache()
+
+    def save(self):
+        """Force save cache to disk."""
+        self._save_cache()
+
+    @property
+    def size(self) -> int:
+        return len(self._cache)
+
+
+# =============================================================================
 # TaggedTriple & Enhanced Extraction
 # =============================================================================
 
@@ -43,27 +108,175 @@ class TaggedTriple:
     source_paragraph_title: str = ""
 
 
+@dataclass
+class ExtractionStats:
+    """Statistics for triple extraction."""
+    total_paragraphs: int = 0
+    paragraphs_from_cache: int = 0
+    paragraphs_from_llm: int = 0
+    total_triples: int = 0
+    llm_time_seconds: float = 0.0
+
+
 class EnhancedTripleExtractor:
     """
-    Extracts triples from ALL paragraphs in a QA example.
+    Extracts triples from ALL paragraphs in a QA example using LLM.
 
-    Unlike the original extractor (run_extrinsic_evaluation.py) which only
-    creates triples between supporting-fact titles, this extracts from all
-    paragraphs and tags each triple with its provenance.
+    Features:
+    - Uses real LLM-based extraction (TripleExtractor) when llm_client is provided
+    - Falls back to heuristic extraction without LLM
+    - Caches extractions to avoid repeated LLM calls
+    - Tags each triple with provenance (supporting fact or distractor)
 
-    HotpotQA has ~10 paragraphs per example (2 supporting, 8 distractor),
-    yielding ~19 triples per example with ~30% signal and ~70% noise.
+    HotpotQA has ~10 paragraphs per example (2 supporting, 8 distractor).
     """
+
+    def __init__(
+        self,
+        llm_client: Any = None,
+        use_cache: bool = True,
+        cache_dir: Path = None
+    ):
+        """
+        Initialize the extractor.
+
+        Args:
+            llm_client: OpenAI-compatible LLM client (e.g., OllamaClient)
+            use_cache: Whether to cache LLM extractions
+            cache_dir: Directory for cache files
+        """
+        self.llm_client = llm_client
+        self.use_cache = use_cache
+        self.cache = TripleCache(cache_dir) if use_cache else None
+        self._triple_extractor = None
+        self.stats = ExtractionStats()
+
+        # Initialize real TripleExtractor if LLM client available
+        if llm_client:
+            try:
+                from src.extraction.triple_extractor import TripleExtractor, ExtractionConfig
+                config = ExtractionConfig(
+                    model=getattr(llm_client, 'model', 'llama3.1:8b'),
+                    temperature=0.0,
+                    use_few_shot=True,
+                    min_confidence=0.3,
+                )
+                self._triple_extractor = TripleExtractor(config, llm_client)
+                logger.info("EnhancedTripleExtractor: Using LLM-based extraction")
+            except Exception as e:
+                logger.warning(f"Could not initialize TripleExtractor: {e}")
+                logger.info("EnhancedTripleExtractor: Falling back to heuristic extraction")
+        else:
+            logger.info("EnhancedTripleExtractor: Using heuristic extraction (no LLM)")
 
     def extract_all_triples(self, example: QAExample) -> List[TaggedTriple]:
         """
         Extract tagged triples from all paragraphs of a QA example.
 
-        Strategy:
-        1. Create entities from ALL paragraph titles
-        2. Create triples between consecutive paragraphs
-        3. Connect all paragraph entities to the answer entity
-        4. Tag each triple based on whether both endpoints are supporting facts
+        If LLM client is available, uses real LLM-based extraction.
+        Otherwise, falls back to heuristic extraction.
+        """
+        if self._triple_extractor:
+            return self._extract_with_llm(example)
+        else:
+            return self._extract_heuristic(example)
+
+    def _extract_with_llm(self, example: QAExample) -> List[TaggedTriple]:
+        """Extract triples using LLM-based TripleExtractor."""
+        tagged_triples = []
+        sf_titles: Set[str] = {sf.title for sf in example.supporting_facts}
+
+        for para in example.context_paragraphs:
+            title = para.get("title", "")
+            sentences = para.get("sentences", [])
+            text = " ".join(sentences) if sentences else ""
+
+            if not text.strip():
+                continue
+
+            self.stats.total_paragraphs += 1
+            is_supporting = title in sf_titles
+
+            # Check cache first
+            cached = self.cache.get(example.id, text) if self.cache else None
+
+            if cached is not None:
+                self.stats.paragraphs_from_cache += 1
+                triples_data = cached
+            else:
+                # Extract with LLM
+                self.stats.paragraphs_from_llm += 1
+                start_time = time.time()
+
+                try:
+                    result = self._triple_extractor.extract(
+                        text=text,
+                        document_id=example.id
+                    )
+                    triples_data = [
+                        {
+                            "subject": t.subject.name,
+                            "subject_type": t.subject.entity_type.value,
+                            "predicate": t.predicate,
+                            "object": t.object.name,
+                            "object_type": t.object.entity_type.value,
+                            "confidence": t.extraction_confidence,
+                            "source_text": t.source_text,
+                        }
+                        for t in result.triples
+                    ]
+                except Exception as e:
+                    logger.warning(f"LLM extraction failed for '{title}': {e}")
+                    triples_data = []
+
+                self.stats.llm_time_seconds += time.time() - start_time
+
+                # Cache the result
+                if self.cache:
+                    self.cache.set(example.id, text, triples_data)
+
+            # Convert to TaggedTriple
+            for td in triples_data:
+                try:
+                    triple = Triple(
+                        subject=Entity(
+                            name=td["subject"],
+                            entity_type=EntityType.from_string(td.get("subject_type", "Konzept")),
+                            source_document=example.id,
+                        ),
+                        predicate=td["predicate"],
+                        object=Entity(
+                            name=td["object"],
+                            entity_type=EntityType.from_string(td.get("object_type", "Konzept")),
+                            source_document=example.id,
+                        ),
+                        source_text=td.get("source_text", text[:200]),
+                        source_document_id=example.id,
+                        extraction_confidence=td.get("confidence", 0.7),
+                    )
+
+                    tagged_triples.append(TaggedTriple(
+                        triple=triple,
+                        is_from_supporting_fact=is_supporting,
+                        source_paragraph_title=title,
+                    ))
+                    self.stats.total_triples += 1
+
+                except Exception as e:
+                    logger.debug(f"Could not create triple: {e}")
+
+        # Save cache at the end
+        if self.cache:
+            self.cache.save()
+
+        return tagged_triples
+
+    def _extract_heuristic(self, example: QAExample) -> List[TaggedTriple]:
+        """
+        Fallback heuristic extraction (no LLM required).
+
+        Creates triples from paragraph titles and answer connections.
+        Less accurate but fast and deterministic.
         """
         tagged_triples = []
         entity_cache: Dict[str, Entity] = {}
@@ -169,7 +382,7 @@ class EnhancedTripleExtractor:
         return tagged_triples
 
     def _infer_entity_type(self, name: str) -> EntityType:
-        """Infer entity type from name (from run_extrinsic_evaluation.py)."""
+        """Infer entity type from name (heuristic)."""
         name_lower = name.lower()
 
         location_keywords = [
@@ -202,7 +415,7 @@ class EnhancedTripleExtractor:
         obj: Entity,
         example: QAExample,
     ) -> str:
-        """Infer relation type from context (from run_extrinsic_evaluation.py)."""
+        """Infer relation type from context (heuristic)."""
         question_lower = example.question.lower()
 
         if "born" in question_lower or "birthplace" in question_lower:
@@ -236,6 +449,24 @@ class EnhancedTripleExtractor:
                 return "TEILNAHME_AN"
 
         return "RELATED_TO"
+
+    def get_stats(self) -> Dict[str, Any]:
+        """Get extraction statistics."""
+        return {
+            "total_paragraphs": self.stats.total_paragraphs,
+            "paragraphs_from_cache": self.stats.paragraphs_from_cache,
+            "paragraphs_from_llm": self.stats.paragraphs_from_llm,
+            "cache_hit_rate": (
+                self.stats.paragraphs_from_cache / max(1, self.stats.total_paragraphs)
+            ),
+            "total_triples": self.stats.total_triples,
+            "llm_time_seconds": self.stats.llm_time_seconds,
+            "avg_llm_time_per_paragraph": (
+                self.stats.llm_time_seconds / max(1, self.stats.paragraphs_from_llm)
+            ),
+            "cache_size": self.cache.size if self.cache else 0,
+            "using_llm": self._triple_extractor is not None,
+        }
 
 
 # =============================================================================
@@ -786,9 +1017,13 @@ class InformationQualityResult:
 class InformationQualityEvaluator:
     """Evaluates information quality by measuring signal/noise separation."""
 
-    def __init__(self, config: ConsistencyConfig):
+    def __init__(
+        self,
+        config: ConsistencyConfig,
+        extractor: EnhancedTripleExtractor = None,
+    ):
         self.config = config
-        self.extractor = EnhancedTripleExtractor()
+        self.extractor = extractor or EnhancedTripleExtractor()
 
     def evaluate_variant(
         self,

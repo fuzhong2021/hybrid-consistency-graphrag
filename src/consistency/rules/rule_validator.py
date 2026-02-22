@@ -18,6 +18,8 @@ import numpy as np
 
 from src.models.entities import Triple, ConflictSet, ConflictType
 from src.consistency.base import ValidationStage, StageResult, ValidationOutcome, ConsistencyConfig
+from src.consistency.rules.temporal_rules import TemporalValidator, get_temporal_validator
+from src.consistency.rules.advanced_rules import AdvancedRulesValidator, AdvancedRulesConfig
 
 logger = logging.getLogger(__name__)
 
@@ -44,11 +46,19 @@ class RuleBasedValidator(ValidationStage):
         if embedding_model is not None:
             self._precompute_relation_embeddings()
 
+        # Temporaler Validator für robuste temporale Prüfungen
+        self.temporal_validator = TemporalValidator()
+
+        # Erweiterte Regeln: Inverse Relations, Transitive Closure, Disjunkte Typen
+        self.advanced_rules = AdvancedRulesValidator()
+
         logger.info(
             f"RuleBasedValidator initialisiert mit {len(self.valid_entity_types)} Entity-Types, "
             f"{len(self.valid_relation_types)} Relation-Types, "
             f"{len(self.relation_type_mapping)} Mappings, "
-            f"Embedding-Tier: {'aktiv' if embedding_model else 'deaktiviert'}"
+            f"Embedding-Tier: {'aktiv' if embedding_model else 'deaktiviert'}, "
+            f"Temporale Regeln: aktiv, "
+            f"Erweiterte Regeln: aktiv (Inverse, Transitive, Disjunkte Typen)"
         )
 
     def _precompute_relation_embeddings(self):
@@ -57,7 +67,16 @@ class RuleBasedValidator(ValidationStage):
             # Menschenlesbare Labels für bessere Embeddings
             canonical_types = list(set(self.valid_relation_types))
             labels = [t.replace("_", " ").lower() for t in canonical_types]
-            embeddings = self.embedding_model.embed_documents(labels)
+
+            # Unterstütze sowohl LangChain-Wrapper als auch SentenceTransformer
+            if hasattr(self.embedding_model, 'embed_documents'):
+                embeddings = self.embedding_model.embed_documents(labels)
+            elif hasattr(self.embedding_model, 'encode'):
+                # Raw SentenceTransformer
+                embeddings = self.embedding_model.encode(labels, convert_to_numpy=True).tolist()
+            else:
+                raise AttributeError("Embedding-Modell unterstützt weder embed_documents noch encode")
+
             for rel_type, emb in zip(canonical_types, embeddings):
                 self._canonical_embeddings[rel_type] = np.array(emb)
             logger.info(f"Pre-computed Embeddings für {len(self._canonical_embeddings)} kanonische Relationstypen")
@@ -140,12 +159,19 @@ class RuleBasedValidator(ValidationStage):
                 conflicts.append(cross_conflict)
                 confidence *= 0.6
 
-        # 6. Temporale Plausibilität
-        temporal_conflict = self._check_temporal(triple)
+        # 6. Temporale Plausibilität (mit Graph-Kontext für robuste Prüfung)
+        temporal_conflict = self._check_temporal(triple, graph_repo)
         checks_performed.append("temporal")
         if temporal_conflict:
             conflicts.append(temporal_conflict)
-            confidence *= 0.7
+            confidence *= 0.3  # Temporale Widersprüche sind schwerwiegend
+
+        # 7. Erweiterte Regeln (Inverse, Transitive, Disjunkte Typen)
+        advanced_conflicts = self.advanced_rules.validate(triple, graph_repo)
+        checks_performed.append("advanced_rules")
+        for adv_conflict in advanced_conflicts:
+            conflicts.append(adv_conflict)
+            confidence *= 0.7  # Moderate Gewichtung für erweiterte Regeln
 
         # Outcome bestimmen
         if conflicts:
@@ -255,7 +281,13 @@ class RuleBasedValidator(ValidationStage):
         if self._canonical_embeddings:
             try:
                 label = normalized.replace("_", " ")
-                query_emb = np.array(self.embedding_model.embed_query(label))
+                # Unterstütze sowohl LangChain-Wrapper als auch SentenceTransformer
+                if hasattr(self.embedding_model, 'embed_query'):
+                    query_emb = np.array(self.embedding_model.embed_query(label))
+                elif hasattr(self.embedding_model, 'encode'):
+                    query_emb = np.array(self.embedding_model.encode(label, convert_to_numpy=True))
+                else:
+                    raise AttributeError("Embedding-Modell unterstützt weder embed_query noch encode")
                 best_sim = 0.0
                 best_type = None
                 for canon_type, canon_emb in self._canonical_embeddings.items():
@@ -322,10 +354,10 @@ class RuleBasedValidator(ValidationStage):
         
         if same_type_count >= max_allowed:
             return ConflictSet(
-                conflict_type=ConflictType.CONTRADICTORY_RELATION,
+                conflict_type=ConflictType.SCHEMA_VIOLATION,  # Schema-Verletzung für hartes FAIL
                 description=f"Kardinalität überschritten: {triple.subject.name} hat bereits "
                            f"{same_type_count} '{predicate_normalized}'-Relationen (max: {max_allowed})",
-                severity=0.7
+                severity=0.9  # Hoch genug für hard_conflicts
             )
         return None
     
@@ -523,9 +555,24 @@ class RuleBasedValidator(ValidationStage):
 
         return None
 
-    def _check_temporal(self, triple: Triple) -> ConflictSet | None:
-        """Prüft temporale Plausibilität."""
-        # Prüfe Subject
+    def _check_temporal(self, triple: Triple, graph_repo: Any = None) -> ConflictSet | None:
+        """
+        Prüft temporale Plausibilität mit robuster Jahresextraktion.
+
+        Prüfungen:
+        1. valid_from/valid_until Konsistenz auf Entities
+        2. Jahresextraktion aus Entity-Namen
+        3. Temporaler Kontext aus Graph (Geburt/Tod)
+        4. Lifetime-Events (Ereignis während Lebensspanne)
+
+        Args:
+            triple: Das zu validierende Triple
+            graph_repo: Repository für Graph-Zugriff (optional)
+
+        Returns:
+            ConflictSet bei temporalem Widerspruch, sonst None
+        """
+        # 1. Legacy-Prüfung: valid_from/valid_until auf Entities
         if triple.subject.valid_from and triple.subject.valid_until:
             if triple.subject.valid_from > triple.subject.valid_until:
                 return ConflictSet(
@@ -533,8 +580,7 @@ class RuleBasedValidator(ValidationStage):
                     description=f"Temporaler Fehler: valid_from > valid_until für '{triple.subject.name}'",
                     severity=0.8
                 )
-        
-        # Prüfe Object
+
         if triple.object.valid_from and triple.object.valid_until:
             if triple.object.valid_from > triple.object.valid_until:
                 return ConflictSet(
@@ -542,5 +588,6 @@ class RuleBasedValidator(ValidationStage):
                     description=f"Temporaler Fehler: valid_from > valid_until für '{triple.object.name}'",
                     severity=0.8
                 )
-        
-        return None
+
+        # 2. Robuste temporale Validierung mit Jahresextraktion
+        return self.temporal_validator.validate(triple, graph_repo)

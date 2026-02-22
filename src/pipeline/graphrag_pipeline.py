@@ -36,7 +36,8 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class PipelineConfig:
-    """Konfiguration für die GraphRAG Pipeline."""
+    """Konfig
+    uration für die GraphRAG Pipeline."""
 
     # Extraction
     extraction_model: str = "gpt-4-turbo-preview"

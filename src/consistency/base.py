@@ -160,6 +160,14 @@ class ConsistencyConfig:
     provenance_boost_2_sources: float = 1.1
     provenance_boost_3_plus: float = 1.2
 
+    # #12: Missing Source Penalty
+    enable_missing_source_penalty: bool = True
+    missing_source_penalty: float = 0.7  # 30% Konfidenz-Abzug (Multiplikator)
+
+    # #13: Source Verification - Prüft ob Quelle den Claim tatsächlich belegt
+    enable_source_verification: bool = True
+    source_verification_threshold: float = 0.3  # Minimum Similarity für "unterstützt"
+
     # #8: Anomalie-Erkennung
     enable_anomaly_detection: bool = True
     anomaly_zscore_threshold: float = 3.0
@@ -173,3 +181,7 @@ class ConsistencyConfig:
     transe_learning_rate: float = 0.01
     transe_retrain_interval: int = 50
     transe_anomaly_threshold: float = 2.0
+
+    # #11: Semantischer Trigger (Selektive LLM-Aufrufe für logische Widersprüche)
+    enable_semantic_trigger: bool = True
+    semantic_trigger_low_confidence: float = 0.6

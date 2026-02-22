@@ -9,6 +9,7 @@ Erweitert um:
 - Zentrales Metriken-Tracking für wissenschaftliche Evaluation
 - Export-Funktionen für Analyse
 - Konfidenz-basierte Batch-Optimierung
+- Provenance-Tracking für Source-Reliability-Lernen
 """
 
 import time
@@ -26,6 +27,8 @@ from src.consistency.rules.rule_validator import RuleBasedValidator
 from src.consistency.embedding_validator import EmbeddingValidator
 from src.consistency.llm_arbitrator import LLMArbitrator
 from src.consistency.metrics import ConsistencyMetrics, LLMUsageStats, create_metrics
+from src.consistency.provenance import ProvenanceTracker, ProvenanceConfig
+from src.consistency.semantic_trigger import SemanticTriggerAnalyzer, SemanticTriggerConfig
 
 logger = logging.getLogger(__name__)
 
@@ -37,17 +40,18 @@ class ProcessingStats:
     stage1_passed: int = 0
     stage2_required: int = 0
     stage3_required: int = 0
+    stage3_semantic_triggered: int = 0  # Durch semantischen Trigger ausgelöst
     accepted: int = 0
     rejected: int = 0
     needs_review: int = 0
     total_time_ms: float = 0.0
-    
+
     @property
     def acceptance_rate(self) -> float:
         if self.total_processed == 0:
             return 0.0
         return self.accepted / self.total_processed
-    
+
     @property
     def escalation_rate(self) -> float:
         if self.stage1_passed == 0:
@@ -101,6 +105,15 @@ class ConsistencyOrchestrator:
         # Metriken-System initialisieren
         self.metrics = create_metrics() if enable_metrics else None
 
+        # Provenance-Tracker initialisieren (geteilte Instanz für alle Stufen)
+        self.provenance_tracker = ProvenanceTracker(config=ProvenanceConfig(
+            enable_source_learning=True,
+            enable_corroboration=True,
+            # #12: Missing Source Penalty Settings von ConsistencyConfig übernehmen
+            enable_missing_source_penalty=config.enable_missing_source_penalty,
+            missing_source_penalty=config.missing_source_penalty,
+        ))
+
         # Callback für LLM-Token-Tracking
         def llm_metrics_callback(usage: LLMUsageStats):
             if self.metrics:
@@ -115,6 +128,17 @@ class ConsistencyOrchestrator:
             metrics_callback=llm_metrics_callback if enable_metrics else None
         )
 
+        # Teile den Provenance-Tracker mit Stage 2
+        self.stage2._provenance_tracker = self.provenance_tracker
+
+        # Semantischer Trigger für selektive LLM-Aufrufe
+        self.semantic_trigger = SemanticTriggerAnalyzer(
+            config=SemanticTriggerConfig(
+                enable_semantic_trigger=config.enable_semantic_trigger,
+                low_confidence_threshold=config.semantic_trigger_low_confidence,
+            )
+        )
+
         # Legacy-Statistiken (für Abwärtskompatibilität)
         self.stats = ProcessingStats()
 
@@ -122,6 +146,9 @@ class ConsistencyOrchestrator:
         logger.info(f"  → High Confidence Threshold: {config.high_confidence_threshold}")
         logger.info(f"  → Medium Confidence Threshold: {config.medium_confidence_threshold}")
         logger.info(f"  → Metriken-Tracking: {'aktiviert' if enable_metrics else 'deaktiviert'}")
+        logger.info(f"  → Provenance-Tracking: aktiviert")
+        logger.info(f"  → Missing Source Penalty: {'aktiviert' if config.enable_missing_source_penalty else 'deaktiviert'}")
+        logger.info(f"  → Semantischer Trigger: {'aktiviert' if config.enable_semantic_trigger else 'deaktiviert'}")
     
     def process(self, triple: Triple) -> Triple:
         """
@@ -162,6 +189,10 @@ class ConsistencyOrchestrator:
             triple.validation_status = ValidationStatus.REJECTED
             triple.conflicts.extend(result1.conflicts)
             self.stats.rejected += 1
+            # Provenance: Aufzeichnen dass Triple abgelehnt wurde
+            self.provenance_tracker.record_triple(
+                triple, accepted=False, caused_conflict=len(result1.conflicts) > 0
+            )
             self._finalize_metrics(triple, start_time, result1.confidence)
             self._log_result(triple, "Stufe 1 FAIL", start_time)
             return triple
@@ -188,6 +219,8 @@ class ConsistencyOrchestrator:
             skip_stage2):
             triple.validation_status = ValidationStatus.ACCEPTED
             self.stats.accepted += 1
+            # Provenance: Aufzeichnen dass Triple akzeptiert wurde
+            self.provenance_tracker.record_triple(triple, accepted=True, caused_conflict=False)
             self._finalize_metrics(triple, start_time, final_confidence)
             self._log_result(triple, "Stufe 1 HIGH CONF", start_time)
             return triple
@@ -256,11 +289,31 @@ class ConsistencyOrchestrator:
         final_confidence = combined_confidence
         stages_passed.append("stage2")
 
-        # Akzeptieren wenn keine Konflikte und genug Konfidenz
-        if (result2.outcome == ValidationOutcome.PASS and
-            combined_confidence >= self.config.medium_confidence_threshold):
+        # ══════════════════════════════════════════════════════════════════
+        # SEMANTISCHER TRIGGER: Prüfe ob LLM trotz hoher Konfidenz nötig ist
+        # ══════════════════════════════════════════════════════════════════
+        trigger_result = self.semantic_trigger.should_trigger_llm(
+            triple, self.graph_repo, combined_confidence
+        )
+
+        # Entscheidung: Stage 3 aufrufen WENN:
+        # 1. Semantischer Trigger aktiv (Rollen-Konflikt erkannt), ODER
+        # 2. Stage 2 nicht bestanden, ODER
+        # 3. Konfidenz zu niedrig
+        force_stage3 = trigger_result.should_trigger
+        normal_escalation = (
+            result2.outcome != ValidationOutcome.PASS or
+            combined_confidence < self.config.medium_confidence_threshold
+        )
+
+        if not force_stage3 and not normal_escalation:
+            # Akzeptieren: Keine Konflikte, genug Konfidenz, kein Trigger
             triple.validation_status = ValidationStatus.ACCEPTED
             self.stats.accepted += 1
+            # Provenance: Aufzeichnen dass Triple akzeptiert wurde
+            self.provenance_tracker.record_triple(
+                triple, accepted=True, caused_conflict=len(result2.conflicts) > 0
+            )
             self._finalize_metrics(triple, start_time, final_confidence)
             self._log_result(triple, "Stufe 2 PASS", start_time)
             return triple
@@ -269,6 +322,11 @@ class ConsistencyOrchestrator:
         # STUFE 3: LLM-Arbitration
         # ══════════════════════════════════════════════════════════════════
         self.stats.stage3_required += 1
+
+        # Tracken ob durch semantischen Trigger ausgelöst
+        if force_stage3:
+            self.stats.stage3_semantic_triggered += 1
+            logger.info(f"  → Stage 3 durch semantischen Trigger: {trigger_result.reason}")
 
         result3 = self.stage3.validate(triple, self.graph_repo)
         triple.add_validation_event("llm_arbitration", result3.outcome == ValidationOutcome.PASS,
@@ -288,15 +346,28 @@ class ConsistencyOrchestrator:
         stages_passed.append("stage3")
 
         # Finale Entscheidung
+        had_conflicts = len(triple.conflicts) > 0 or len(result3.conflicts) > 0
         if result3.outcome == ValidationOutcome.PASS:
             triple.validation_status = ValidationStatus.ACCEPTED
             self.stats.accepted += 1
+            # Provenance: Aufzeichnen dass Triple akzeptiert wurde
+            self.provenance_tracker.record_triple(
+                triple, accepted=True, caused_conflict=had_conflicts
+            )
         elif result3.outcome == ValidationOutcome.FAIL:
             triple.validation_status = ValidationStatus.REJECTED
             self.stats.rejected += 1
+            # Provenance: Aufzeichnen dass Triple abgelehnt wurde
+            self.provenance_tracker.record_triple(
+                triple, accepted=False, caused_conflict=had_conflicts
+            )
         else:  # UNCERTAIN
             triple.validation_status = ValidationStatus.NEEDS_REVIEW
             self.stats.needs_review += 1
+            # Provenance: Als akzeptiert aufzeichnen (needs_review = manuell prüfen)
+            self.provenance_tracker.record_triple(
+                triple, accepted=True, caused_conflict=True
+            )
 
         self._finalize_metrics(triple, start_time, final_confidence)
         self._log_result(triple, f"Stufe 3 {result3.outcome.value}", start_time)
@@ -346,8 +417,10 @@ class ConsistencyOrchestrator:
             "stage1_passed": self.stats.stage1_passed,
             "stage2_required": self.stats.stage2_required,
             "stage3_required": self.stats.stage3_required,
+            "stage3_semantic_triggered": self.stats.stage3_semantic_triggered,
             "escalation_rate": f"{self.stats.escalation_rate:.1%}",
-            "avg_time_ms": self.stats.total_time_ms / max(self.stats.total_processed, 1)
+            "avg_time_ms": self.stats.total_time_ms / max(self.stats.total_processed, 1),
+            "semantic_triggers": self.semantic_trigger.get_statistics(),
         }
     
     def reset_statistics(self):
@@ -355,6 +428,7 @@ class ConsistencyOrchestrator:
         self.stats = ProcessingStats()
         if self.metrics:
             self.metrics.reset()
+        self.semantic_trigger.reset_statistics()
 
     # =========================================================================
     # Export und Evaluation Methoden
@@ -481,6 +555,53 @@ class ConsistencyOrchestrator:
 """
         return latex
 
+    def get_provenance_statistics(self) -> Dict[str, Any]:
+        """
+        Gibt Provenance-Statistiken zurück.
+
+        Enthält:
+        - Source-Zuverlässigkeits-Scores
+        - Corroboration-Statistiken
+        - Top/Bottom-Quellen
+        """
+        return self.provenance_tracker.get_source_statistics()
+
+    def get_provenance_report(self, source_id: str) -> Dict[str, Any]:
+        """
+        Gibt einen detaillierten Report für eine einzelne Quelle zurück.
+
+        Args:
+            source_id: ID der Quelle
+
+        Returns:
+            Detaillierter Report mit Statistiken
+        """
+        return self.provenance_tracker.get_source_report(source_id)
+
+    def export_provenance_profiles(self, path: str):
+        """
+        Exportiert alle Source-Profile für spätere Verwendung.
+
+        Args:
+            path: Dateipfad für Export (JSON)
+        """
+        profiles = self.provenance_tracker.export_profiles()
+        with open(path, 'w', encoding='utf-8') as f:
+            json.dump(profiles, f, indent=2, ensure_ascii=False, default=str)
+        logger.info(f"Provenance-Profile exportiert nach {path}")
+
+    def import_provenance_profiles(self, path: str):
+        """
+        Importiert Source-Profile aus früherer Session.
+
+        Args:
+            path: Dateipfad für Import (JSON)
+        """
+        with open(path, 'r', encoding='utf-8') as f:
+            profiles = json.load(f)
+        self.provenance_tracker.import_profiles(profiles)
+        logger.info(f"Provenance-Profile importiert von {path}")
+
     def print_summary(self):
         """Gibt eine formatierte Zusammenfassung auf der Konsole aus."""
         report = self.get_evaluation_report()
@@ -506,5 +627,39 @@ class ConsistencyOrchestrator:
         print("\n💰 LLM-KOSTEN:")
         for key, value in report["llm_costs"].items():
             print(f"   {key}: {value}")
+
+        # Provenance-Statistiken
+        prov_stats = self.get_provenance_statistics()
+        if prov_stats.get("total_sources", 0) > 0:
+            print("\n📜 PROVENANCE-TRACKING:")
+            print(f"   Quellen verarbeitet: {prov_stats.get('total_sources', 0)}")
+            print(f"   Triples verarbeitet: {prov_stats.get('total_triples_processed', 0)}")
+            print(f"   Durchschnittliche Zuverlässigkeit: {prov_stats.get('avg_reliability', 0):.2%}")
+            print(f"   Fakten mit Mehrfachbestätigung: {prov_stats.get('unique_facts_corroborated', 0)}")
+            # #12: Missing Source Penalty Statistiken
+            missing_count = prov_stats.get('missing_sources_count', 0)
+            penalties_applied = prov_stats.get('missing_source_penalties_applied', 0)
+            if missing_count > 0:
+                print(f"   ⚠️  Triples ohne Quelle: {missing_count} (Penalties angewendet: {penalties_applied})")
+
+            top_sources = prov_stats.get("top_sources", [])
+            if top_sources:
+                print("\n   Top-Quellen (nach Zuverlässigkeit):")
+                for source_id, score, count in top_sources[:5]:
+                    print(f"      {source_id}: {score:.2%} ({count} Triples)")
+
+        # Semantischer Trigger Statistiken
+        trigger_stats = self.semantic_trigger.get_statistics()
+        if trigger_stats.get("total_checked", 0) > 0:
+            print("\n🎯 SEMANTISCHER TRIGGER:")
+            print(f"   Geprüft: {trigger_stats['total_checked']}")
+            print(f"   Ausgelöst: {trigger_stats['triggered']}")
+            print(f"   Trigger-Rate: {trigger_stats['trigger_rate']:.1%}")
+            if trigger_stats["triggered"] > 0:
+                reasons = trigger_stats.get("reasons", {})
+                print(f"   Gründe:")
+                for reason, count in reasons.items():
+                    if count > 0:
+                        print(f"      {reason}: {count}")
 
         print("\n" + "=" * 60)

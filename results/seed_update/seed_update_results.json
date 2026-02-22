@@ -1,0 +1,57 @@
+{
+  "seed": {
+    "phase": "seed",
+    "total_triples": 85,
+    "accepted": 85,
+    "rejected": 0,
+    "acceptance_rate": 1.0,
+    "rejected_by_reason": {
+      "schema": 0,
+      "duplicate": 0,
+      "cardinality": 0,
+      "temporal": 0,
+      "other": 0
+    },
+    "duration_seconds": 0.0027570724487304688
+  },
+  "update": {
+    "phase": "update",
+    "total_triples": 95,
+    "accepted": 84,
+    "rejected": 11,
+    "acceptance_rate": 0.8842105263157894,
+    "rejected_by_reason": {
+      "schema": 11,
+      "duplicate": 0,
+      "cardinality": 0,
+      "temporal": 0,
+      "other": 0
+    },
+    "duration_seconds": 0.41504383087158203
+  },
+  "graph": {
+    "final_entities": 104,
+    "final_relations": 169
+  },
+  "config": {
+    "seed_ratio": 0.5,
+    "total_examples": 10,
+    "validate_seed": false,
+    "benchmark": "hotpotqa"
+  },
+  "summary": {
+    "seed_acceptance_rate": 1.0,
+    "update_acceptance_rate": 0.8842105263157894,
+    "update_rejection_rate": 0.11578947368421055
+  },
+  "timestamp": "2026-02-15T19:16:05.618318",
+  "args": {
+    "seed_ratio": 0.5,
+    "total_examples": 10,
+    "validate_seed": false,
+    "benchmark": "hotpotqa",
+    "with_llm": false,
+    "llm_model": "llama3.1:8b",
+    "output_dir": "results/seed_update"
+  }
+}

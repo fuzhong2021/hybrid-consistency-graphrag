@@ -1,0 +1,114 @@
+{
+  "part_a_controlled": {
+    "total_mutations": 90,
+    "by_category": {
+      "duplicate": {
+        "tp": 4,
+        "tn": 0,
+        "fp": 0,
+        "fn": 16,
+        "precision": 1.0,
+        "recall": 0.2,
+        "f1": 0.33333333333333337,
+        "accuracy": 0.2,
+        "acceptance_rate": 0.8
+      },
+      "contradiction": {
+        "tp": 2,
+        "tn": 0,
+        "fp": 0,
+        "fn": 32,
+        "precision": 1.0,
+        "recall": 0.058823529411764705,
+        "f1": 0.1111111111111111,
+        "accuracy": 0.058823529411764705,
+        "acceptance_rate": 0.9411764705882353
+      },
+      "schema": {
+        "tp": 19,
+        "tn": 0,
+        "fp": 0,
+        "fn": 0,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "accuracy": 1.0,
+        "acceptance_rate": 0.0
+      },
+      "cardinality": {
+        "tp": 0,
+        "tn": 0,
+        "fp": 0,
+        "fn": 0,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0,
+        "accuracy": 0.0,
+        "acceptance_rate": 0.0
+      },
+      "correct": {
+        "tp": 0,
+        "tn": 16,
+        "fp": 1,
+        "fn": 0,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0,
+        "accuracy": 0.9411764705882353,
+        "acceptance_rate": 0.9411764705882353
+      }
+    },
+    "overall": {
+      "tp": 25,
+      "tn": 16,
+      "fp": 1,
+      "fn": 48,
+      "precision": 0.9615384615384616,
+      "recall": 0.3424657534246575,
+      "f1": 0.5050505050505051,
+      "accuracy": 0.45555555555555555,
+      "acceptance_rate": 0.7111111111111111
+    },
+    "duration_seconds": 0.27181124687194824
+  },
+  "part_b_realistic": {
+    "seed": {
+      "triples": 0,
+      "accepted": 0
+    },
+    "update": {
+      "total": 0,
+      "from_supporting": 0,
+      "from_distractor": 0
+    },
+    "decisions": {
+      "supporting_accepted": 0,
+      "supporting_rejected": 0,
+      "distractor_accepted": 0,
+      "distractor_rejected": 0
+    },
+    "metrics": {
+      "signal_preservation_rate": 0.0,
+      "noise_rejection_rate": 0.0,
+      "information_precision": 0.0,
+      "information_f1": 0.0
+    },
+    "duration_seconds": 0.0
+  },
+  "config": {
+    "sample_size": 5,
+    "benchmark": "hotpotqa",
+    "seed": 42
+  },
+  "timestamp": "2026-02-15T23:45:21.865599",
+  "args": {
+    "sample_size": 5,
+    "benchmark": "hotpotqa",
+    "part_a_only": true,
+    "part_b_only": false,
+    "with_llm": false,
+    "llm_model": "llama3.1:8b",
+    "seed": 42,
+    "output_dir": "results/hybrid"
+  }
+}
