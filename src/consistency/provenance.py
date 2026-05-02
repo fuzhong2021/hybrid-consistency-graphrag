@@ -122,9 +122,10 @@ class ProvenanceConfig:
 
     # Source Verification (#13) - Prüft ob Quelle den Claim tatsächlich belegt
     enable_source_verification: bool = True
-    source_verification_high_threshold: float = 0.5    # Quelle unterstützt stark
-    source_verification_medium_threshold: float = 0.3  # Quelle unterstützt teilweise
-    source_verification_low_threshold: float = 0.15    # Quelle unterstützt kaum
+    source_verification_method: str = "embedding"  # "embedding" oder "nli"
+    source_verification_high_threshold: float = 0.7    # Quelle unterstützt stark
+    source_verification_medium_threshold: float = 0.5  # Quelle unterstützt teilweise
+    source_verification_low_threshold: float = 0.3     # Quelle unterstützt kaum
     source_verification_no_support_penalty: float = 0.5   # 50% Abzug wenn keine Unterstützung
     source_verification_low_support_penalty: float = 0.7  # 30% Abzug bei schwacher Unterstützung
 
@@ -145,10 +146,10 @@ class ProvenanceTracker:
 
         # Statistiken
         self.total_triples_processed = 0
-        self._missing_sources_count = 0  # #12: Anzahl Triples ohne Quelle
-        self._penalties_applied = 0  # #12: Anzahl angewendeter Penalties
-        self._source_verification_count = 0  # #13: Anzahl Source Verifications
-        self._source_unsupported_count = 0   # #13: Anzahl nicht unterstützter Claims
+        self._missing_sources_count = 0  
+        self._penalties_applied = 0  
+        self._source_verification_count = 0  
+        self._source_unsupported_count = 0   
 
         # Source Verifier (#13)
         self._source_verifier = None
@@ -169,6 +170,7 @@ class ProvenanceTracker:
             )
             verifier_config = SourceVerificationConfig(
                 enable_source_verification=True,
+                method=self.config.source_verification_method,
                 high_support_threshold=self.config.source_verification_high_threshold,
                 medium_support_threshold=self.config.source_verification_medium_threshold,
                 low_support_threshold=self.config.source_verification_low_threshold,
@@ -320,33 +322,50 @@ class ProvenanceTracker:
     def record_triple(
         self,
         triple: Triple,
-        accepted: bool,
-        caused_conflict: bool = False
+        accepted: Optional[bool],
+        caused_conflict: bool = False,
+        needs_review: bool = False
     ):
         """
         Zeichnet ein verarbeitetes Triple auf.
 
         Aktualisiert Source-Statistiken und Fakt-Corroboration.
+
+        Args:
+            triple: Das Triple
+            accepted: True=akzeptiert, False=abgelehnt, None=unsicher (NEEDS_REVIEW)
+            caused_conflict: Ob das Triple einen Konflikt verursachte
+            needs_review: Ob das Triple manuell geprüft werden muss
+
+        FIX #2: NEEDS_REVIEW wird korrekt als "unsicher" behandelt, nicht als "akzeptiert".
+        Das verhindert dass Sources mit vielen NEEDS_REVIEW fälschlicherweise als zuverlässig erscheinen.
         """
         source_id = triple.source_document_id or "unknown"
         profile = self.get_source_profile(source_id)
 
         # Statistiken aktualisieren
         profile.total_triples += 1
-        if accepted:
+
+        
+        if accepted is True:
             profile.accepted_triples += 1
-        else:
+        elif accepted is False:
             profile.rejected_triples += 1
+        # Bei accepted=None (NEEDS_REVIEW) werden weder accepted noch rejected erhöht
+        # Das ist korrekt, da NEEDS_REVIEW ein unsicherer Zustand ist
+
         if caused_conflict:
             profile.conflicts_caused += 1
 
         # Fakt-Corroboration aktualisieren
-        if accepted and self.config.enable_corroboration:
+        
+        if accepted is True and self.config.enable_corroboration:
             fact_key = (triple.subject.id, triple.predicate.upper(), triple.object.id)
             self.fact_sources[fact_key].add(source_id)
 
         # Source-Reliability lernen
-        if self.config.enable_source_learning and profile.total_triples >= 5:
+        
+        if self.config.enable_source_learning and profile.total_triples >= 5 and accepted is not None:
             self._update_source_reliability(profile)
 
         self.total_triples_processed += 1
@@ -400,10 +419,10 @@ class ProvenanceTracker:
                 key=lambda x: -x[1]
             )[:10],
             "unique_facts_corroborated": len(self.fact_sources),
-            # #12: Missing Source Penalty Statistics
+            # Missing Source Penalty Statistics
             "missing_sources_count": self._missing_sources_count,
             "missing_source_penalties_applied": self._penalties_applied,
-            # #13: Source Verification Statistics
+            # Source Verification
             "source_verifications_performed": self._source_verification_count,
             "source_claims_unsupported": self._source_unsupported_count,
             "source_verification_rejection_rate": (

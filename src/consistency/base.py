@@ -126,7 +126,7 @@ class ConsistencyConfig:
         "KIND_VON": {"max": 2},
     })
 
-    # #1: Domain-Constraint-Matrix — {relation: {subject_types: [...], object_types: [...]}}
+    # Domain-Constraint-Matrix — {relation: {subject_types: [...], object_types: [...]}}
     domain_constraints: Dict[str, Dict[str, list]] = field(default_factory=lambda: {
         "GEBOREN_IN": {"subject_types": ["Person"], "object_types": ["Ort"]},
         "GEBOREN_AM": {"subject_types": ["Person"], "object_types": ["Ort", "Ereignis"]},
@@ -144,36 +144,45 @@ class ConsistencyConfig:
         "HAT_BEZIEHUNG_ZU": {"subject_types": ["Person", "Organisation", "Ort", "Ereignis", "Konzept"], "object_types": ["Person", "Organisation", "Ort", "Ereignis", "Konzept"]},
     })
 
-    # #2: Self-Loop — Relationstypen bei denen Reflexivität erlaubt ist
+    # Self-Loop — Relationstypen bei denen Reflexivität erlaubt ist
     allow_reflexive: list = field(default_factory=lambda: ["HAT_BEZIEHUNG_ZU"])
 
-    # #4: Zykluserkennung — Relationstypen die azyklisch sein müssen
+    # Zykluserkennung — Relationstypen die azyklisch sein müssen
     acyclic_relations: list = field(default_factory=lambda: ["TEIL_VON", "BEFINDET_SICH_IN", "KIND_VON"])
     max_cycle_depth: int = 10
 
-    # #5: Symmetrie/Asymmetrie
+    # Symmetrie/Asymmetrie
     symmetric_relations: list = field(default_factory=lambda: ["VERHEIRATET_MIT", "KENNT", "HAT_BEZIEHUNG_ZU"])
     asymmetric_relations: list = field(default_factory=lambda: ["LEITET", "KIND_VON", "TEIL_VON", "ARBEITET_BEI", "STUDIERT_AN"])
 
-    # #7: Provenance-Boost
+    # Provenance-Boost
     enable_provenance_boost: bool = True
     provenance_boost_2_sources: float = 1.1
     provenance_boost_3_plus: float = 1.2
 
-    # #12: Missing Source Penalty
+    # Missing Source Penalty
     enable_missing_source_penalty: bool = True
     missing_source_penalty: float = 0.7  # 30% Konfidenz-Abzug (Multiplikator)
 
-    # #13: Source Verification - Prüft ob Quelle den Claim tatsächlich belegt
+    # Source Verification - Prüft ob Quelle den Claim tatsächlich belegt
     enable_source_verification: bool = True
-    source_verification_threshold: float = 0.3  # Minimum Similarity für "unterstützt"
+    source_verification_threshold: float = 0.5  # Minimum Similarity für "unterstützt"
 
-    # #8: Anomalie-Erkennung
+    # NLI-basierte Validierung — feste Stufe der hybriden Kaskade
+    # Erkennt semantische Widersprüche (entailment/contradiction/neutral)
+    # Reduziert LLM-Aufrufe, weil Widersprüche bereits vor Stage 3 abgefangen werden
+    enable_nli: bool = True   # Default: an (fester Bestandteil der Architektur)
+    nli_model: str = "cross-encoder/nli-deberta-v3-xsmall"  # ~44M Parameter
+    nli_device: str = "cpu"  # oder "cuda"
+    nli_contradiction_threshold: float = 0.7  # Ab wann gilt als Widerspruch?
+    nli_entailment_threshold: float = 0.7  # Ab wann gilt als Unterstützung?
+
+    # Anomalie-Erkennung
     enable_anomaly_detection: bool = True
     anomaly_zscore_threshold: float = 3.0
     anomaly_confidence_penalty: float = 0.8
 
-    # #10: TransE
+    # TransE
     enable_transe: bool = False
     transe_min_triples: int = 50
     transe_embedding_dim: int = 50
@@ -182,6 +191,23 @@ class ConsistencyConfig:
     transe_retrain_interval: int = 50
     transe_anomaly_threshold: float = 2.0
 
-    # #11: Semantischer Trigger (Selektive LLM-Aufrufe für logische Widersprüche)
+    # Semantischer Trigger (Selektive LLM-Aufrufe für logische Widersprüche)
     enable_semantic_trigger: bool = True
     semantic_trigger_low_confidence: float = 0.6
+
+    # Ablation Study Flags
+    # Wenn True, werden alle Stufen immer durchlaufen (für Ablation/Debugging)
+    always_run_all_stages: bool = False
+    # Wenn True, wird Stufe 2 übersprungen
+    disable_stage_2: bool = False
+    # Wenn True, wird Stufe 3 übersprungen (kein LLM)
+    disable_stage_3: bool = False
+    # Wenn True, wird Provenance-Boost deaktiviert
+    disable_provenance_boost: bool = False
+
+    # Confidence Combination Method
+    # "multiply" (default), "min" (konservativ), "weighted_avg", "bayesian"
+    confidence_combination_method: str = "weighted_avg"
+    # Gewichte für weighted_avg Methode
+    stage1_weight: float = 0.6
+    stage2_weight: float = 0.4

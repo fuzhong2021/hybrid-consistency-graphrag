@@ -1,0 +1,80 @@
+{
+  "fever": {
+    "mcnemar": {
+      "statistic": -292.0,
+      "p_value": 2.5693097373736338e-67,
+      "b": 22,
+      "c": 314,
+      "better_model": "B",
+      "significant_0.05": true,
+      "significant_0.01": true,
+      "interpretation": "Sehr signifikant (p < 0.001): Modelle unterscheiden sich stark"
+    },
+    "ece_a": {
+      "n": 1293,
+      "ece": 0.3967598410483948,
+      "mce": 0.8390106929071022,
+      "brier": 0.45600811147150855,
+      "interpretation": "poor"
+    },
+    "ece_b": {
+      "n": 1293,
+      "ece": 0.2684064965197216,
+      "mce": 0.3374485596707819,
+      "brier": 0.3171073663109049,
+      "interpretation": "poor"
+    }
+  },
+  "hotpotqa": {
+    "mcnemar": {
+      "statistic": -419.0,
+      "p_value": 2.3952480335329708e-67,
+      "b": 107,
+      "c": 526,
+      "better_model": "B",
+      "significant_0.05": true,
+      "significant_0.01": true,
+      "interpretation": "Sehr signifikant (p < 0.001): Modelle unterscheiden sich stark"
+    },
+    "ece_a": {
+      "n": 7905,
+      "ece": 0.05801618431333779,
+      "mce": 0.5903999999999999,
+      "brier": 0.17317512835429724,
+      "interpretation": "good"
+    },
+    "ece_b": {
+      "n": 7905,
+      "ece": 0.22547819734345353,
+      "mce": 0.6537062937062939,
+      "brier": 0.2109654905744782,
+      "interpretation": "poor"
+    }
+  },
+  "musique": {
+    "mcnemar": {
+      "statistic": -499.0,
+      "p_value": 1.517595823441099e-58,
+      "b": 249,
+      "c": 748,
+      "better_model": "B",
+      "significant_0.05": true,
+      "significant_0.01": true,
+      "interpretation": "Sehr signifikant (p < 0.001): Modelle unterscheiden sich stark"
+    },
+    "ece_a": {
+      "n": 10484,
+      "ece": 0.07055405970704952,
+      "mce": 0.4899999999999999,
+      "brier": 0.17708264390105632,
+      "interpretation": "good"
+    },
+    "ece_b": {
+      "n": 10484,
+      "ece": 0.16402795986741708,
+      "mce": 0.6502600000000001,
+      "brier": 0.2118366726926187,
+      "interpretation": "poor"
+    }
+  }
+}

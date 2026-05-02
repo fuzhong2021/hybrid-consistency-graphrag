@@ -34,16 +34,24 @@ class SourceVerificationConfig:
     # Aktivierung
     enable_source_verification: bool = True
 
-    # Similarity Thresholds
-    high_support_threshold: float = 0.5    # Quelle unterstützt stark
-    medium_support_threshold: float = 0.3  # Quelle unterstützt teilweise
-    low_support_threshold: float = 0.15    # Quelle unterstützt kaum
+    # Methode: "embedding" (Cosine-Similarity) oder "nli" (DeBERTa Entailment)
+    method: str = "embedding"
+
+    # Similarity Thresholds (kalibriert für all-MiniLM-L6-v2)
+    high_support_threshold: float = 0.7    # Quelle unterstützt stark
+    medium_support_threshold: float = 0.5  # Quelle unterstützt teilweise
+    low_support_threshold: float = 0.3     # Quelle unterstützt kaum
 
     # Penalties (Multiplikatoren)
-    no_support_penalty: float = 0.5        # Quelle unterstützt nicht: 50% Abzug
-    low_support_penalty: float = 0.7       # Schwache Unterstützung: 30% Abzug
-    medium_support_bonus: float = 1.0      # Mittlere Unterstützung: neutral
-    high_support_bonus: float = 1.1        # Starke Unterstützung: 10% Bonus
+    no_support_penalty: float = 0.5        # Sim < 0.3: 50% Abzug
+    low_support_penalty: float = 0.7       # Sim 0.3–0.5: 30% Abzug
+    medium_support_bonus: float = 1.0      # Sim 0.5–0.7: neutral
+    high_support_bonus: float = 1.1        # Sim ≥ 0.7: 10% Bonus
+
+    # NLI-spezifische Schwellenwerte
+    nli_entailment_threshold: float = 0.7
+    nli_contradiction_threshold: float = 0.7
+    nli_model: str = "cross-encoder/nli-deberta-v3-xsmall"
 
     # Embedding Model
     embedding_model: str = "all-MiniLM-L6-v2"
@@ -93,14 +101,15 @@ class SourceVerifier:
     """
     Verifiziert ob eine Quelle einen Triple-Claim tatsächlich unterstützt.
 
-    Verwendet Embedding-Similarity zwischen:
-    - Dem Triple als natürlichsprachlicher Claim
-    - Dem Quelltext (source_text)
+    Zwei Methoden:
+    - "embedding": Cosine-Similarity zwischen Claim- und Quelltext-Embedding
+    - "nli": DeBERTa Cross-Encoder klassifiziert (Entailment/Contradiction/Neutral)
     """
 
     def __init__(self, config: SourceVerificationConfig = None):
         self.config = config or SourceVerificationConfig()
         self._embedding_model = None
+        self._nli_model = None
         self._embedding_cache: Dict[str, np.ndarray] = {}
 
         # Statistiken
@@ -133,6 +142,19 @@ class SourceVerifier:
                 logger.warning("sentence-transformers nicht installiert")
                 return None
         return self._embedding_model
+
+    @property
+    def nli_model(self):
+        """Lazy Loading des NLI-Modells (nur bei method='nli')."""
+        if self._nli_model is None:
+            try:
+                from sentence_transformers import CrossEncoder
+                self._nli_model = CrossEncoder(self.config.nli_model)
+                logger.info(f"NLI-Modell für Source Verification geladen: {self.config.nli_model}")
+            except ImportError:
+                logger.warning("sentence-transformers nicht installiert — NLI Source Verification nicht verfügbar")
+                return None
+        return self._nli_model
 
     def triple_to_claim(self, triple: Triple) -> str:
         """
@@ -240,7 +262,11 @@ class SourceVerifier:
         # Claim generieren
         claim = self.triple_to_claim(triple)
 
-        # Embeddings berechnen
+        # Methode wählen
+        if self.config.method == "nli":
+            return self._verify_nli(claim, text)
+
+        # === Embedding-basierte Verification (default) ===
         claim_embedding = self._get_embedding(claim)
         source_embedding = self._get_embedding(text)
 
@@ -250,16 +276,14 @@ class SourceVerifier:
                 is_verified=False,
                 similarity_score=0.0,
                 support_level="unknown",
-                confidence_factor=1.0,  # Neutral wenn keine Prüfung möglich
+                confidence_factor=1.0,
                 claim_text=claim,
                 source_text_snippet=text[:200],
                 source_text_available=True,
             )
 
-        # Similarity berechnen
         similarity = self._cosine_similarity(claim_embedding, source_embedding)
 
-        # Support Level und Confidence Factor bestimmen
         if similarity >= self.config.high_support_threshold:
             support_level = "high"
             confidence_factor = self.config.high_support_bonus
@@ -296,6 +320,68 @@ class SourceVerifier:
             confidence_factor=confidence_factor,
             claim_text=claim,
             source_text_snippet=text[:200],
+            source_text_available=True,
+        )
+
+    def _verify_nli(self, claim: str, source_text: str) -> SourceVerificationResult:
+        """NLI-basierte Source Verification: Entailment/Contradiction/Neutral."""
+        model = self.nli_model
+        if model is None:
+            logger.warning("NLI-Modell nicht verfügbar — Fallback auf neutral")
+            return SourceVerificationResult(
+                is_verified=False, similarity_score=0.0,
+                support_level="unknown", confidence_factor=1.0,
+                claim_text=claim, source_text_snippet=source_text[:200],
+                source_text_available=True,
+            )
+
+        # DeBERTa Cross-Encoder: predict() gibt Logits [contradiction, entailment, neutral]
+        scores = model.predict([(source_text, claim)])
+        if hasattr(scores, 'shape') and len(scores.shape) == 1:
+            logits = scores
+        else:
+            logits = scores[0]
+
+        labels = ["contradiction", "entailment", "neutral"]
+        idx = int(logits.argmax())
+        label = labels[idx]
+        conf = float(logits[idx])
+
+        if label == "entailment" and conf >= self.config.nli_entailment_threshold:
+            support_level = "high"
+            confidence_factor = self.config.high_support_bonus
+            is_verified = True
+        elif label == "contradiction" and conf >= self.config.nli_contradiction_threshold:
+            support_level = "none"
+            confidence_factor = self.config.no_support_penalty
+            is_verified = False
+        elif label == "entailment":
+            support_level = "medium"
+            confidence_factor = self.config.medium_support_bonus
+            is_verified = True
+        else:
+            support_level = "low"
+            confidence_factor = self.config.low_support_penalty
+            is_verified = False
+
+        self.total_verified += 1
+        if is_verified:
+            self.verified_supported += 1
+        else:
+            self.verified_unsupported += 1
+
+        logger.debug(
+            f"Source Verification (NLI): claim='{claim[:50]}...' "
+            f"label={label} conf={conf:.3f} support={support_level}"
+        )
+
+        return SourceVerificationResult(
+            is_verified=is_verified,
+            similarity_score=conf,
+            support_level=support_level,
+            confidence_factor=confidence_factor,
+            claim_text=claim,
+            source_text_snippet=source_text[:200],
             source_text_available=True,
         )
 

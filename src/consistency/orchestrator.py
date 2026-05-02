@@ -33,6 +33,67 @@ from src.consistency.semantic_trigger import SemanticTriggerAnalyzer, SemanticTr
 logger = logging.getLogger(__name__)
 
 
+def combine_confidences(
+    conf1: float,
+    conf2: float,
+    method: str = "weighted_avg",
+    weight1: float = 0.6,
+    weight2: float = 0.4
+) -> float:
+    """
+    Kombiniert zwei Konfidenzwerte mit verschiedenen Methoden.
+
+    FIX #4: Theoretisch fundierte Kombination statt einfacher Multiplikation.
+
+    Methods:
+        "multiply": conf1 * conf2 (original, aber problematisch da es Stage 2 als
+                   reinen Reduzierer behandelt, nicht als unabhängigen Assessor)
+        "min": min(conf1, conf2) (konservativ, nimmt den schlechtesten Wert)
+        "weighted_avg": weight1 * conf1 + weight2 * conf2 (gewichteter Durchschnitt,
+                       Standard für Multi-Stage-Systeme, Guo et al. 2017)
+        "bayesian": P(valid|E1,E2) mit Bayes Rule (theoretisch korrekt, aber
+                   erfordert Prior-Annahmen)
+
+    References:
+        - Guo et al. (2017): On Calibration of Modern Neural Networks
+        - Dong et al. (2014): Knowledge Vault
+
+    Args:
+        conf1: Konfidenz von Stage 1
+        conf2: Konfidenz von Stage 2
+        method: Kombinationsmethode
+        weight1: Gewicht für Stage 1 (bei weighted_avg)
+        weight2: Gewicht für Stage 2 (bei weighted_avg)
+
+    Returns:
+        Kombinierte Konfidenz
+    """
+    if method == "multiply":
+        return conf1 * conf2
+    elif method == "min":
+        return min(conf1, conf2)
+    elif method == "weighted_avg":
+        # Normalisiere Gewichte
+        total_weight = weight1 + weight2
+        w1 = weight1 / total_weight
+        w2 = weight2 / total_weight
+        return w1 * conf1 + w2 * conf2
+    elif method == "bayesian":
+        # Vereinfachte Bayesian Kombination (Annahme: unabhängige Assessoren)
+        # P(valid|E1,E2) ∝ P(E1|valid) * P(E2|valid) * P(valid)
+        # Mit P(valid) = 0.5 als Prior und Likelihood = confidence
+        prior = 0.5
+        likelihood_valid = conf1 * conf2
+        likelihood_invalid = (1 - conf1) * (1 - conf2)
+        posterior = (likelihood_valid * prior) / (
+            likelihood_valid * prior + likelihood_invalid * (1 - prior)
+        )
+        return posterior
+    else:
+        logger.warning(f"Unbekannte Kombinationsmethode '{method}', nutze weighted_avg")
+        return (weight1 * conf1 + weight2 * conf2) / (weight1 + weight2)
+
+
 @dataclass
 class ProcessingStats:
     """Statistiken über die Verarbeitung."""
@@ -106,12 +167,15 @@ class ConsistencyOrchestrator:
         self.metrics = create_metrics() if enable_metrics else None
 
         # Provenance-Tracker initialisieren (geteilte Instanz für alle Stufen)
+        import os
         self.provenance_tracker = ProvenanceTracker(config=ProvenanceConfig(
             enable_source_learning=True,
             enable_corroboration=True,
-            # #12: Missing Source Penalty Settings von ConsistencyConfig übernehmen
+            # Missing Source Penalty Settings von ConsistencyConfig übernehmen
             enable_missing_source_penalty=config.enable_missing_source_penalty,
             missing_source_penalty=config.missing_source_penalty,
+            # Source Verification Methode (default: embedding, via Env steuerbar)
+            source_verification_method=os.environ.get("SOURCE_VERIFICATION_METHOD", "embedding"),
         ))
 
         # Callback für LLM-Token-Tracking
@@ -130,6 +194,21 @@ class ConsistencyOrchestrator:
 
         # Teile den Provenance-Tracker mit Stage 2
         self.stage2._provenance_tracker = self.provenance_tracker
+
+        # NLI-Validator für semantische Widerspruchserkennung (optional)
+        self.nli_validator = None
+        if config.enable_nli:
+            try:
+                from src.consistency.nli_validator import NLIValidator, NLIConfig
+                self.nli_validator = NLIValidator(NLIConfig(
+                    model_name=config.nli_model,
+                    device=config.nli_device,
+                    contradiction_threshold=config.nli_contradiction_threshold,
+                    entailment_threshold=config.nli_entailment_threshold,
+                ))
+                logger.info(f"  → NLI-Validator: aktiviert ({config.nli_model})")
+            except ImportError as e:
+                logger.warning(f"NLI-Validator nicht verfügbar: {e}")
 
         # Semantischer Trigger für selektive LLM-Aufrufe
         self.semantic_trigger = SemanticTriggerAnalyzer(
@@ -202,28 +281,46 @@ class ConsistencyOrchestrator:
         final_confidence = result1.confidence
 
         # Fast-Path: Hohe Konfidenz → Direkt akzeptieren
-        # ABER: Wenn always_check_duplicates und (embedding_model ODER graph_repo) vorhanden,
-        # trotzdem Stufe 2 ausführen für:
-        # - Duplikaterkennung (Name-basiert oder Embedding-basiert)
-        # - Provenance-Boost (#7), Anomalie-Erkennung (#8), TransE (#10)
-        skip_stage2 = not (
-            self.always_check_duplicates and
-            (self._has_embedding_model or self.graph_repo is not None)
-        )
+        # Routing-Logik
+        # - always_run_all_stages erzwingt alle Stufen (für Debugging/Ablation)
+        # - disable_stage_2 überspringt Stage 2 komplett
+        # - Ansonsten: High-Confidence (≥0.9) überspringt Stage 2
+        skip_stage2 = (
+            result1.confidence >= self.config.high_confidence_threshold and
+            not self.config.always_run_all_stages
+        ) or self.config.disable_stage_2
 
-        logger.debug(f"  → skip_stage2={skip_stage2}, always_check={self.always_check_duplicates}, "
-                    f"has_emb={self._has_embedding_model}, has_repo={self.graph_repo is not None}")
+        logger.debug(f"  → skip_stage2={skip_stage2}, conf={result1.confidence:.2f}, "
+                    f"force_all={self.config.always_run_all_stages}, disable_s2={self.config.disable_stage_2}")
 
         if (result1.outcome == ValidationOutcome.PASS and
             result1.confidence >= self.config.high_confidence_threshold and
             skip_stage2):
-            triple.validation_status = ValidationStatus.ACCEPTED
-            self.stats.accepted += 1
-            # Provenance: Aufzeichnen dass Triple akzeptiert wurde
-            self.provenance_tracker.record_triple(triple, accepted=True, caused_conflict=False)
-            self._finalize_metrics(triple, start_time, final_confidence)
-            self._log_result(triple, "Stufe 1 HIGH CONF", start_time)
-            return triple
+            # Source Verification im Fast-Path
+            # Auch high-confidence Triples brauchen Source Verification!
+            adjusted_confidence = result1.confidence
+            if self.config.enable_source_verification and triple.source_text:
+                prov_conf, prov_details = self.provenance_tracker.calculate_confidence(
+                    triple, result1.confidence
+                )
+                adjusted_confidence = prov_conf
+                triple.add_validation_event("source_verification_fastpath", True,
+                                           adjusted_confidence, prov_details)
+                logger.debug(f"  → Source Verification in Fast-Path: {result1.confidence:.2f} → {adjusted_confidence:.2f}")
+
+            # Re-Check nach Source Verification: Noch immer high-confidence?
+            if adjusted_confidence >= self.config.high_confidence_threshold:
+                triple.validation_status = ValidationStatus.ACCEPTED
+                self.stats.accepted += 1
+                final_confidence = adjusted_confidence
+                # Provenance: Aufzeichnen dass Triple akzeptiert wurde
+                self.provenance_tracker.record_triple(triple, accepted=True, caused_conflict=False)
+                self._finalize_metrics(triple, start_time, final_confidence)
+                self._log_result(triple, "Stufe 1 HIGH CONF", start_time)
+                return triple
+            else:
+                # Source Verification hat Konfidenz gesenkt → weiter zu Stage 2
+                logger.debug(f"  → Source Verification senkte Konfidenz unter Threshold, weiter zu Stage 2")
 
         # Wenn wir hier sind, geht es weiter zu Stufe 2
         logger.debug(f"  → Weiter zu Stufe 2 (skip_stage2={skip_stage2}, conf={result1.confidence})")
@@ -284,10 +381,46 @@ class ConsistencyOrchestrator:
             except Exception as e:
                 logger.debug(f"  Entity Resolution Object fehlgeschlagen: {e}")
 
-        # Kombinierte Konfidenz
-        combined_confidence = result1.confidence * result2.confidence
+        # Kombinierte Konfidenz - FIX #4: Theoretisch fundierte Methode
+        combined_confidence = combine_confidences(
+            result1.confidence,
+            result2.confidence,
+            method=self.config.confidence_combination_method,
+            weight1=self.config.stage1_weight,
+            weight2=self.config.stage2_weight
+        )
         final_confidence = combined_confidence
         stages_passed.append("stage2")
+        logger.debug(f"  → Kombinierte Konfidenz ({self.config.confidence_combination_method}): "
+                    f"{result1.confidence:.2f} + {result2.confidence:.2f} = {combined_confidence:.2f}")
+
+        # ══════════════════════════════════════════════════════════════════
+        # NLI-VALIDIERUNG: Semantische Widerspruchserkennung (optional)
+        # Erkennt entailment/contradiction/neutral zwischen source_text und Claim
+        # ══════════════════════════════════════════════════════════════════
+        if self.nli_validator and triple.source_text:
+            nli_result = self.nli_validator.validate(triple, self.graph_repo)
+            triple.add_validation_event("nli_validation",
+                                       nli_result.outcome == ValidationOutcome.PASS,
+                                       nli_result.confidence, nli_result.details)
+
+            logger.debug(f"  → NLI: {nli_result.details.get('nli_label', 'unknown')} "
+                        f"({nli_result.details.get('nli_score', 0):.2f})")
+
+            # Bei Widerspruch: Triple ablehnen
+            if nli_result.outcome == ValidationOutcome.FAIL:
+                triple.validation_status = ValidationStatus.REJECTED
+                self.stats.rejected += 1
+                self.provenance_tracker.record_triple(triple, accepted=False, caused_conflict=True)
+                self._finalize_metrics(triple, start_time, nli_result.confidence)
+                self._log_result(triple, "NLI CONTRADICTION", start_time)
+                return triple
+
+            # Bei Entailment: Konfidenz-Boost
+            if nli_result.outcome == ValidationOutcome.PASS:
+                nli_factor = nli_result.details.get("confidence_factor", 1.0)
+                final_confidence = min(1.0, final_confidence * nli_factor)
+                logger.debug(f"  → NLI Entailment: Konfidenz {combined_confidence:.2f} → {final_confidence:.2f}")
 
         # ══════════════════════════════════════════════════════════════════
         # SEMANTISCHER TRIGGER: Prüfe ob LLM trotz hoher Konfidenz nötig ist
@@ -342,8 +475,17 @@ class ConsistencyOrchestrator:
                 confidence=result3.confidence
             )
 
-        final_confidence = combined_confidence * result3.confidence
+        # Stage 3 Konfidenz kombinieren
+        final_confidence = combine_confidences(
+            combined_confidence,
+            result3.confidence,
+            method=self.config.confidence_combination_method,
+            weight1=self.config.stage1_weight + self.config.stage2_weight,  # Akkumuliertes Gewicht
+            weight2=0.5  # Stage 3 (LLM) hat festes Gewicht
+        )
         stages_passed.append("stage3")
+        logger.debug(f"  → Finale Konfidenz ({self.config.confidence_combination_method}): "
+                    f"{combined_confidence:.2f} + {result3.confidence:.2f} = {final_confidence:.2f}")
 
         # Finale Entscheidung
         had_conflicts = len(triple.conflicts) > 0 or len(result3.conflicts) > 0
@@ -364,9 +506,12 @@ class ConsistencyOrchestrator:
         else:  # UNCERTAIN
             triple.validation_status = ValidationStatus.NEEDS_REVIEW
             self.stats.needs_review += 1
-            # Provenance: Als akzeptiert aufzeichnen (needs_review = manuell prüfen)
+            # NEEDS_REVIEW tracken
+            # NEEDS_REVIEW ist NICHT accepted! Es ist ein unsicherer Zustand.
+            # Verwende accepted=None um anzuzeigen dass das Ergebnis unklar ist.
+            # Das verhindert dass NEEDS_REVIEW die Source-Reliability inflationiert.
             self.provenance_tracker.record_triple(
-                triple, accepted=True, caused_conflict=True
+                triple, accepted=None, caused_conflict=True, needs_review=True
             )
 
         self._finalize_metrics(triple, start_time, final_confidence)
@@ -636,7 +781,7 @@ class ConsistencyOrchestrator:
             print(f"   Triples verarbeitet: {prov_stats.get('total_triples_processed', 0)}")
             print(f"   Durchschnittliche Zuverlässigkeit: {prov_stats.get('avg_reliability', 0):.2%}")
             print(f"   Fakten mit Mehrfachbestätigung: {prov_stats.get('unique_facts_corroborated', 0)}")
-            # #12: Missing Source Penalty Statistiken
+            # Missing Source Penalty Statistiken
             missing_count = prov_stats.get('missing_sources_count', 0)
             penalties_applied = prov_stats.get('missing_source_penalties_applied', 0)
             if missing_count > 0:

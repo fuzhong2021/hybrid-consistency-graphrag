@@ -1,6 +1,23 @@
 #!/bin/bash
 # Vollständiges Setup und Evaluation für RTX 2070 (oder CPU)
 # Führt die 6-Phasen Evaluation des Konsistenzmoduls durch
+#
+# VERWENDUNG:
+#   ./scripts/setup_and_run.sh [SAMPLE_SIZE] [LOAD_BASELINE]
+#
+#   SAMPLE_SIZE:   Anzahl HotpotQA-Beispiele (default: 50)
+#   LOAD_BASELINE: "auto" (default), "true", oder "false"
+#
+# BEISPIELE:
+#   ./scripts/setup_and_run.sh              # 50 Beispiele, Baseline auto-detect
+#   ./scripts/setup_and_run.sh 7400         # Volle Evaluation, Baseline auto-detect
+#   ./scripts/setup_and_run.sh 7400 true    # Volle Evaluation, Baseline laden
+#   ./scripts/setup_and_run.sh 7400 false   # Volle Evaluation, Baseline neu erstellen
+#
+# BASELINE-PERSISTENZ:
+#   - Die Baseline wird automatisch unter data/baseline_graph_{SIZE}.pkl gespeichert
+#   - Bei erneutem Aufruf mit gleichem SAMPLE_SIZE wird die Baseline geladen
+#   - Phase 1 wird übersprungen → deutlich schnellere Evaluation!
 
 set -e
 
@@ -111,13 +128,34 @@ echo "Starte 6-Phasen Evaluation..."
 echo ""
 
 SAMPLE_SIZE=${1:-50}
+LOAD_BASELINE=${2:-"auto"}  # "auto", "true", "false"
+
+# Prüfe ob Baseline existiert
+BASELINE_FILE="data/baseline_graph_${SAMPLE_SIZE}.pkl"
+
+if [ "$LOAD_BASELINE" = "auto" ]; then
+    if [ -f "$BASELINE_FILE" ]; then
+        echo "✓ Baseline gefunden: $BASELINE_FILE"
+        echo "  → Lade gespeicherte Baseline (Phase 1 wird übersprungen)"
+        LOAD_BASELINE="true"
+    else
+        echo "○ Keine Baseline gefunden: $BASELINE_FILE"
+        echo "  → Erstelle neue Baseline (wird gespeichert)"
+        LOAD_BASELINE="false"
+    fi
+fi
+
+BASELINE_ARGS=""
+if [ "$LOAD_BASELINE" = "true" ]; then
+    BASELINE_ARGS="--load-baseline"
+fi
 
 if [ "$LLM_AVAILABLE" = true ]; then
     echo "Mit LLM-Stufe (llama3.1:8b)"
-    python evaluation/hotpotqa_realistic_evaluation.py --sample-size $SAMPLE_SIZE
+    python evaluation/hotpotqa_realistic_evaluation.py --sample-size $SAMPLE_SIZE $BASELINE_ARGS
 else
     echo "Ohne LLM-Stufe (--no-llm)"
-    python evaluation/hotpotqa_realistic_evaluation.py --sample-size $SAMPLE_SIZE --no-llm
+    python evaluation/hotpotqa_realistic_evaluation.py --sample-size $SAMPLE_SIZE --no-llm $BASELINE_ARGS
 fi
 
 echo ""

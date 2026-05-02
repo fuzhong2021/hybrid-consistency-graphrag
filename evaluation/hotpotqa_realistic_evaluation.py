@@ -111,13 +111,13 @@ class EvaluationResults:
     phase3_correct_without_source: Optional[PhaseMetrics] = None
     phase4_distractor_contradictions: Optional[PhaseMetrics] = None
     phase5_cross_question_confusion: Optional[PhaseMetrics] = None
-    phase6_fake_source_attack: Optional[PhaseMetrics] = None  # NEU: Source Verification
+    phase6_fake_source_attack: Optional[PhaseMetrics] = None  
 
     # Vergleichsmetriken
     missing_source_penalty_effectiveness: float = 0.0
     contradiction_detection_f1: float = 0.0
     cross_question_detection_f1: float = 0.0
-    fake_source_detection_f1: float = 0.0  # NEU
+    fake_source_detection_f1: float = 0.0
 
     config: Dict[str, Any] = field(default_factory=dict)
 
@@ -498,7 +498,7 @@ class RealisticTripleExtractor:
             subject=gold_entity,
             predicate="CONFIRMS",  # Neue Relation um Kardinalitätskonflikte zu vermeiden
             object=answer_entity,
-            # HIER IST DER ANGRIFF: source_text passt nicht zum Claim!
+            # source_text ist absichtlich themenfremd (Fake Source)
             source_text=fake_source_text,
             source_document_id=source_id,  # Hat eine Quelle (kein Missing Source Penalty)
             extraction_confidence=0.9
@@ -520,12 +520,20 @@ class RealisticHotpotQAEvaluator:
         use_gpu: bool = True,
         embedding_model_name: str = "all-MiniLM-L6-v2",
         missing_source_penalty: float = 0.7,
-        verbose: bool = True
+        verbose: bool = True,
+        baseline_path: str = "data/baseline_graph.pkl",
+        load_baseline: bool = False,
+        save_baseline: bool = True,
+        force_rebuild: bool = False
     ):
         self.use_gpu = use_gpu
         self.embedding_model_name = embedding_model_name
         self.missing_source_penalty = missing_source_penalty
         self.verbose = verbose
+        self.baseline_path = baseline_path
+        self.load_baseline = load_baseline
+        self.save_baseline = save_baseline
+        self.force_rebuild = force_rebuild
 
         self.extractor = RealisticTripleExtractor()
         self.results = EvaluationResults()
@@ -533,28 +541,36 @@ class RealisticHotpotQAEvaluator:
         self.embedding_model = None
         self.orchestrator = None
         self.graph_repo = None
+        self._baseline_loaded = False
 
     def setup(self, llm_model: str = "llama3.1:8b", ollama_url: str = "http://localhost:11434"):
         """Initialisiert Modelle und Orchestrator."""
         logger.info("=== SETUP ===")
 
-        # 1. Embedding-Modell
+        # 1. Embedding-Modell — cuda → mps (Apple Silicon) → cpu Fallback
         logger.info(f"Lade Embedding-Modell: {self.embedding_model_name}")
         try:
             from sentence_transformers import SentenceTransformer
-            device = "cuda" if self.use_gpu else "cpu"
+            import torch
+            if self.use_gpu:
+                if torch.cuda.is_available():
+                    device = "cuda"
+                elif torch.backends.mps.is_available():
+                    device = "mps"
+                else:
+                    device = "cpu"
+                    logger.warning("  ⚠ Weder CUDA noch MPS verfügbar, nutze CPU")
+            else:
+                device = "cpu"
             self.embedding_model = SentenceTransformer(
                 self.embedding_model_name,
                 device=device
             )
             logger.info(f"  ✓ Modell geladen auf {device}")
-
-            if self.use_gpu:
-                import torch
-                if torch.cuda.is_available():
-                    logger.info(f"  ✓ GPU: {torch.cuda.get_device_name(0)}")
-                else:
-                    logger.warning("  ⚠ GPU nicht verfügbar, nutze CPU")
+            if device == "cuda":
+                logger.info(f"  ✓ GPU: {torch.cuda.get_device_name(0)}")
+            elif device == "mps":
+                logger.info("  ✓ GPU: Apple Metal (MPS)")
         except Exception as e:
             logger.warning(f"  ⚠ Kein Embedding-Modell: {e}")
             self.embedding_model = None
@@ -754,18 +770,64 @@ class RealisticHotpotQAEvaluator:
         # =====================================================================
         logger.info("\n--- PHASE 1: Baseline KG aus GOLD Paragraphen ---")
 
-        baseline_triples = []
-        for example in examples:
-            triples = self.extractor.extract_baseline_triples(example, with_source=True)
-            baseline_triples.extend(triples)
+        # Prüfe ob wir eine gespeicherte Baseline laden können
+        baseline_loaded_from_file = False
+        if self.load_baseline and not self.force_rebuild:
+            if InMemoryGraphRepository.exists(self.baseline_path):
+                logger.info(f"  → Lade Baseline aus: {self.baseline_path}")
+                if self.graph_repo.load(self.baseline_path):
+                    baseline_loaded_from_file = True
+                    self._baseline_loaded = True
+                    stats = self.graph_repo.get_stats()
 
-        logger.info(f"Extrahiert: {len(baseline_triples)} Baseline-Triples (nur GOLD)")
+                    # Erstelle Dummy-Metriken für Phase 1
+                    self.results.phase1_baseline = PhaseMetrics(
+                        phase_name="Phase 1: Baseline (GOLD) [CACHED]",
+                        total_triples=stats['valid_relations'],
+                        accepted=stats['valid_relations'],
+                        rejected=0,
+                        avg_confidence=0.85,
+                        processing_time_seconds=0.0
+                    )
 
-        # WICHTIG: persist_to_graph=True damit Kardinalitätsprüfung später funktioniert!
-        self.results.phase1_baseline = self._process_triples_batch(
-            baseline_triples, "Phase 1: Baseline (GOLD)", expect_rejection=False,
-            persist_to_graph=True  # Speichere im Graph für spätere Konflikte
-        )
+                    logger.info(f"  ✓ Baseline geladen: {stats['valid_entities']} Entities, "
+                               f"{stats['valid_relations']} Relations")
+
+                    # Lade auch Entity-Cache für konsistente Entity-IDs
+                    for entity in self.graph_repo.find_all_entities():
+                        cache_key = entity.name.lower().strip()
+                        self.extractor.entity_cache[cache_key] = entity
+
+                    logger.info(f"  ✓ Entity-Cache wiederhergestellt: "
+                               f"{len(self.extractor.entity_cache)} Entities")
+                else:
+                    logger.warning(f"  ⚠ Konnte Baseline nicht laden, erstelle neu...")
+            else:
+                logger.info(f"  → Keine Baseline gefunden: {self.baseline_path}")
+                logger.info(f"  → Erstelle neue Baseline...")
+
+        if not baseline_loaded_from_file:
+            baseline_triples = []
+            for example in examples:
+                triples = self.extractor.extract_baseline_triples(example, with_source=True)
+                baseline_triples.extend(triples)
+
+            logger.info(f"Extrahiert: {len(baseline_triples)} Baseline-Triples (nur GOLD)")
+
+            # WICHTIG: persist_to_graph=True damit Kardinalitätsprüfung später funktioniert!
+            self.results.phase1_baseline = self._process_triples_batch(
+                baseline_triples, "Phase 1: Baseline (GOLD)", expect_rejection=False,
+                persist_to_graph=True  # Speichere im Graph für spätere Konflikte
+            )
+
+            # Speichere Baseline für nächstes Mal
+            if self.save_baseline and self.graph_repo:
+                logger.info(f"  → Speichere Baseline: {self.baseline_path}")
+                if self.graph_repo.save(self.baseline_path):
+                    logger.info(f"  ✓ Baseline gespeichert für zukünftige Läufe")
+                else:
+                    logger.warning(f"  ⚠ Konnte Baseline nicht speichern")
+
         self._print_phase_summary(self.results.phase1_baseline)
 
         # Log: Wie viele Relationen sind jetzt im Graph?
@@ -1136,10 +1198,31 @@ def main():
         "--no-llm", action="store_true",
         help="LLM deaktivieren (nur Embedding-basierte Prüfung)"
     )
+    # Baseline Persistenz
+    parser.add_argument(
+        "--baseline-path", type=str, default="data/baseline_graph.pkl",
+        help="Pfad zur Baseline-Graph-Datei (default: data/baseline_graph.pkl)"
+    )
+    parser.add_argument(
+        "--load-baseline", action="store_true",
+        help="Lade Baseline aus Datei statt neu zu erstellen"
+    )
+    parser.add_argument(
+        "--save-baseline", action="store_true", default=True,
+        help="Speichere Baseline nach Phase 1 (default: True)"
+    )
+    parser.add_argument(
+        "--force-rebuild", action="store_true",
+        help="Baseline neu erstellen auch wenn Datei existiert"
+    )
 
     args = parser.parse_args()
 
     use_gpu = args.gpu and not args.no_gpu
+
+    # Passe Baseline-Pfad an Sample-Size an
+    if args.baseline_path == "data/baseline_graph.pkl":
+        args.baseline_path = f"data/baseline_graph_{args.sample_size}.pkl"
 
     # Lade HotpotQA
     logger.info(f"Lade HotpotQA ({args.split}, {args.sample_size} Beispiele)...")
@@ -1156,7 +1239,11 @@ def main():
     evaluator = RealisticHotpotQAEvaluator(
         use_gpu=use_gpu,
         missing_source_penalty=args.penalty,
-        verbose=not args.quiet
+        verbose=not args.quiet,
+        baseline_path=args.baseline_path,
+        load_baseline=args.load_baseline,
+        save_baseline=args.save_baseline,
+        force_rebuild=args.force_rebuild
     )
 
     # Setup mit LLM wenn gewünscht

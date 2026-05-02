@@ -1,0 +1,363 @@
+{
+  "full_evaluation_with_llm.log": {
+    "rows": [
+      {
+        "dataset": "fever",
+        "stage": "nli",
+        "verdict": "REJECTED",
+        "count": 4009,
+        "latency_ms": {
+          "mean": 289.49,
+          "median": 299.3,
+          "min": 49.9,
+          "max": 548.3
+        }
+      },
+      {
+        "dataset": "fever",
+        "stage": "stage2_embedding",
+        "verdict": "ACCEPTED",
+        "count": 598,
+        "latency_ms": {
+          "mean": 193.27,
+          "median": 161.95,
+          "min": 65.5,
+          "max": 4184.1
+        }
+      },
+      {
+        "dataset": "fever",
+        "stage": "stage3_llm",
+        "verdict": "ACCEPTED",
+        "count": 2907,
+        "latency_ms": {
+          "mean": 5634.51,
+          "median": 6101.1,
+          "min": 2498.5,
+          "max": 37282.5
+        }
+      },
+      {
+        "dataset": "fever",
+        "stage": "stage3_llm",
+        "verdict": "REJECTED",
+        "count": 178,
+        "latency_ms": {
+          "mean": 6733.48,
+          "median": 6986.05,
+          "min": 2699.9,
+          "max": 14491.6
+        }
+      },
+      {
+        "dataset": "hotpotqa",
+        "stage": "nli",
+        "verdict": "REJECTED",
+        "count": 1816,
+        "latency_ms": {
+          "mean": 1272.55,
+          "median": 1181.05,
+          "min": 73.5,
+          "max": 4140.8
+        }
+      },
+      {
+        "dataset": "hotpotqa",
+        "stage": "stage1_rules",
+        "verdict": "REJECTED",
+        "count": 9894,
+        "latency_ms": {
+          "mean": 0.05,
+          "median": 0.0,
+          "min": 0.0,
+          "max": 1.9
+        }
+      },
+      {
+        "dataset": "hotpotqa",
+        "stage": "stage2_embedding",
+        "verdict": "ACCEPTED",
+        "count": 13949,
+        "latency_ms": {
+          "mean": 1273.5,
+          "median": 1202.3,
+          "min": 44.9,
+          "max": 4062.7
+        }
+      },
+      {
+        "dataset": "hotpotqa",
+        "stage": "stage3_llm",
+        "verdict": "ACCEPTED",
+        "count": 321,
+        "latency_ms": {
+          "mean": 5007.27,
+          "median": 4437.3,
+          "min": 2698.7,
+          "max": 16073.0
+        }
+      },
+      {
+        "dataset": "hotpotqa",
+        "stage": "stage3_llm",
+        "verdict": "REJECTED",
+        "count": 1975,
+        "latency_ms": {
+          "mean": 21589.89,
+          "median": 4988.2,
+          "min": 2729.4,
+          "max": 31630206.4
+        }
+      }
+    ],
+    "distribution": {
+      "hotpotqa": {
+        "total_decisions": 27955,
+        "by_stage": {
+          "stage2_embedding": {
+            "count": 13949,
+            "share": 0.499
+          },
+          "stage1_rules": {
+            "count": 9894,
+            "share": 0.3539
+          },
+          "stage3_llm": {
+            "count": 2296,
+            "share": 0.0821
+          },
+          "nli": {
+            "count": 1816,
+            "share": 0.065
+          }
+        }
+      },
+      "fever": {
+        "total_decisions": 7692,
+        "by_stage": {
+          "nli": {
+            "count": 4009,
+            "share": 0.5212
+          },
+          "stage3_llm": {
+            "count": 3085,
+            "share": 0.4011
+          },
+          "stage2_embedding": {
+            "count": 598,
+            "share": 0.0777
+          }
+        }
+      }
+    },
+    "cost": {
+      "hotpotqa": {
+        "llm_calls": 2296,
+        "assumed_input_tokens": 1377600,
+        "assumed_output_tokens": 183680,
+        "estimated_gpt4_usd": 19.29,
+        "estimated_gpt4_usd_per_1k_triples": 0.69
+      },
+      "fever": {
+        "llm_calls": 3085,
+        "assumed_input_tokens": 1851000,
+        "assumed_output_tokens": 246800,
+        "estimated_gpt4_usd": 25.91,
+        "estimated_gpt4_usd_per_1k_triples": 3.37
+      }
+    }
+  },
+  "full_evaluation_no_llm.log": {
+    "rows": [
+      {
+        "dataset": "fever",
+        "stage": "nli",
+        "verdict": "REJECTED",
+        "count": 4039,
+        "latency_ms": {
+          "mean": 181.02,
+          "median": 184.4,
+          "min": 62.7,
+          "max": 329.3
+        }
+      },
+      {
+        "dataset": "fever",
+        "stage": "stage2_embedding",
+        "verdict": "ACCEPTED",
+        "count": 668,
+        "latency_ms": {
+          "mean": 151.71,
+          "median": 144.0,
+          "min": 58.3,
+          "max": 3172.9
+        }
+      },
+      {
+        "dataset": "hotpotqa",
+        "stage": "nli",
+        "verdict": "REJECTED",
+        "count": 1906,
+        "latency_ms": {
+          "mean": 1092.76,
+          "median": 1006.3,
+          "min": 63.5,
+          "max": 3592.6
+        }
+      },
+      {
+        "dataset": "hotpotqa",
+        "stage": "stage1_rules",
+        "verdict": "REJECTED",
+        "count": 8527,
+        "latency_ms": {
+          "mean": 0.05,
+          "median": 0.0,
+          "min": 0.0,
+          "max": 0.2
+        }
+      },
+      {
+        "dataset": "hotpotqa",
+        "stage": "stage2_embedding",
+        "verdict": "ACCEPTED",
+        "count": 11829,
+        "latency_ms": {
+          "mean": 1214.21,
+          "median": 1219.0,
+          "min": 43.8,
+          "max": 3584.4
+        }
+      }
+    ],
+    "distribution": {
+      "hotpotqa": {
+        "total_decisions": 22262,
+        "by_stage": {
+          "stage2_embedding": {
+            "count": 11829,
+            "share": 0.5314
+          },
+          "stage1_rules": {
+            "count": 8527,
+            "share": 0.383
+          },
+          "nli": {
+            "count": 1906,
+            "share": 0.0856
+          }
+        }
+      },
+      "fever": {
+        "total_decisions": 4707,
+        "by_stage": {
+          "nli": {
+            "count": 4039,
+            "share": 0.8581
+          },
+          "stage2_embedding": {
+            "count": 668,
+            "share": 0.1419
+          }
+        }
+      }
+    },
+    "cost": {}
+  },
+  "musique_evaluation.log": {
+    "rows": [
+      {
+        "dataset": "musique",
+        "stage": "nli",
+        "verdict": "REJECTED",
+        "count": 1558,
+        "latency_ms": {
+          "mean": 205.83,
+          "median": 197.0,
+          "min": 13.8,
+          "max": 598.0
+        }
+      },
+      {
+        "dataset": "musique",
+        "stage": "stage1_rules",
+        "verdict": "REJECTED",
+        "count": 5905,
+        "latency_ms": {
+          "mean": 0.04,
+          "median": 0.0,
+          "min": 0.0,
+          "max": 0.2
+        }
+      },
+      {
+        "dataset": "musique",
+        "stage": "stage2_embedding",
+        "verdict": "ACCEPTED",
+        "count": 3338,
+        "latency_ms": {
+          "mean": 229.66,
+          "median": 217.2,
+          "min": 1.3,
+          "max": 3328.8
+        }
+      },
+      {
+        "dataset": "musique",
+        "stage": "stage3_llm",
+        "verdict": "ACCEPTED",
+        "count": 85,
+        "latency_ms": {
+          "mean": 3848.95,
+          "median": 3512.5,
+          "min": 2684.5,
+          "max": 10359.9
+        }
+      },
+      {
+        "dataset": "musique",
+        "stage": "stage3_llm",
+        "verdict": "REJECTED",
+        "count": 1007,
+        "latency_ms": {
+          "mean": 3842.76,
+          "median": 3459.0,
+          "min": 2112.0,
+          "max": 10114.5
+        }
+      }
+    ],
+    "distribution": {
+      "musique": {
+        "total_decisions": 11893,
+        "by_stage": {
+          "stage1_rules": {
+            "count": 5905,
+            "share": 0.4965
+          },
+          "stage2_embedding": {
+            "count": 3338,
+            "share": 0.2807
+          },
+          "nli": {
+            "count": 1558,
+            "share": 0.131
+          },
+          "stage3_llm": {
+            "count": 1092,
+            "share": 0.0918
+          }
+        }
+      }
+    },
+    "cost": {
+      "musique": {
+        "llm_calls": 1092,
+        "assumed_input_tokens": 655200,
+        "assumed_output_tokens": 87360,
+        "estimated_gpt4_usd": 9.17,
+        "estimated_gpt4_usd_per_1k_triples": 0.77
+      }
+    }
+  }
+}

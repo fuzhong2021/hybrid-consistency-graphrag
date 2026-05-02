@@ -259,8 +259,8 @@ Beispiele:
     orchestrator = ConsistencyOrchestrator(
         config=config,
         graph_repo=graph,
-        embedding_model=embedding_model,  # ← Stufe 2
-        llm_client=llm_client,            # ← Stufe 3
+        embedding_model=embedding_model,
+        llm_client=llm_client,
         enable_metrics=True,
         always_check_duplicates=True,
     )

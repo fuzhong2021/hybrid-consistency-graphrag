@@ -1,0 +1,62 @@
+{
+  "timestamp": "2026-02-26T01:40:31.560913",
+  "datasets": [
+    {
+      "dataset_name": "hotpotqa",
+      "total_triples": 29284,
+      "accepted": 14270,
+      "rejected": 13685,
+      "needs_review": 1329,
+      "acceptance_rate": 0.4872968173746756,
+      "avg_confidence": 0.6669820075017399,
+      "processing_time_s": 72187.6138241291,
+      "true_positives": 10525,
+      "false_positives": 3160,
+      "true_negatives": 10282,
+      "false_negatives": 3988,
+      "precision": 0.7690902447935696,
+      "recall": 0.7252118790050299,
+      "f1_score": 0.7465068444570536,
+      "accuracy": 0.7443033446610624
+    },
+    {
+      "dataset_name": "fever",
+      "total_triples": 9515,
+      "accepted": 3505,
+      "rejected": 4187,
+      "needs_review": 1823,
+      "acceptance_rate": 0.36836573830793484,
+      "avg_confidence": 0.4281108333544998,
+      "processing_time_s": 39910.424911260605,
+      "true_positives": 3191,
+      "false_positives": 996,
+      "true_negatives": 2403,
+      "false_negatives": 1102,
+      "precision": 0.7621208502507762,
+      "recall": 0.7433030514791521,
+      "f1_score": 0.7525943396226416,
+      "accuracy": 0.7272490899635985
+    },
+    {
+      "dataset_name": "musique",
+      "total_triples": 12836,
+      "accepted": 3423,
+      "rejected": 8470,
+      "needs_review": 943,
+      "acceptance_rate": 0.2666718603926457,
+      "avg_confidence": 0.5824447051868517,
+      "processing_time_s": 8950.306781053543,
+      "true_positives": 4147,
+      "false_positives": 4323,
+      "true_negatives": 2848,
+      "false_negatives": 575,
+      "precision": 0.4896103896103896,
+      "recall": 0.8782295637441762,
+      "f1_score": 0.6287143723468769,
+      "accuracy": 0.5881611031699319
+    }
+  ],
+  "avg_f1": 0.7092718521421907,
+  "avg_accuracy": 0.6865711792648642,
+  "generalization_score": 0.057016927676945536
+}

@@ -354,10 +354,10 @@ class RuleBasedValidator(ValidationStage):
         
         if same_type_count >= max_allowed:
             return ConflictSet(
-                conflict_type=ConflictType.SCHEMA_VIOLATION,  # Schema-Verletzung für hartes FAIL
+                conflict_type=ConflictType.CONTRADICTORY_RELATION,
                 description=f"Kardinalität überschritten: {triple.subject.name} hat bereits "
                            f"{same_type_count} '{predicate_normalized}'-Relationen (max: {max_allowed})",
-                severity=0.9  # Hoch genug für hard_conflicts
+                severity=0.85  # Unter 0.9-Threshold → UNCERTAIN, nicht FAIL → Stage 2 entscheidet
             )
         return None
     

@@ -12,6 +12,9 @@ Verwendung:
 """
 
 import logging
+import json
+import pickle
+from pathlib import Path
 from typing import List, Dict, Any, Optional, Tuple
 from datetime import datetime
 from collections import defaultdict
@@ -405,6 +408,91 @@ class InMemoryGraphRepository:
         self._source_index.clear()
         self._target_index.clear()
         logger.info("Graph geleert")
+
+    # =========================================================================
+    # Persistenz: Speichern und Laden
+    # =========================================================================
+
+    def save(self, path: str) -> bool:
+        """
+        Speichert den Graph in eine Datei.
+
+        Args:
+            path: Pfad zur Datei (mit .pkl oder .pickle Endung)
+
+        Returns:
+            True wenn erfolgreich gespeichert
+        """
+        try:
+            filepath = Path(path)
+            filepath.parent.mkdir(parents=True, exist_ok=True)
+
+            data = {
+                "entities": self._entities,
+                "relations": self._relations,
+                "name_index": dict(self._name_index),
+                "type_index": dict(self._type_index),
+                "fingerprint_index": dict(self._fingerprint_index),
+                "source_index": dict(self._source_index),
+                "target_index": dict(self._target_index),
+                "stats": self.get_stats(),
+                "saved_at": datetime.utcnow().isoformat(),
+            }
+
+            with open(filepath, 'wb') as f:
+                pickle.dump(data, f)
+
+            logger.info(f"Graph gespeichert: {filepath} "
+                       f"({data['stats']['valid_entities']} Entities, "
+                       f"{data['stats']['valid_relations']} Relations)")
+            return True
+
+        except Exception as e:
+            logger.error(f"Fehler beim Speichern: {e}")
+            return False
+
+    def load(self, path: str) -> bool:
+        """
+        Lädt einen Graph aus einer Datei.
+
+        Args:
+            path: Pfad zur Datei
+
+        Returns:
+            True wenn erfolgreich geladen
+        """
+        try:
+            filepath = Path(path)
+            if not filepath.exists():
+                logger.warning(f"Datei nicht gefunden: {filepath}")
+                return False
+
+            with open(filepath, 'rb') as f:
+                data = pickle.load(f)
+
+            self._entities = data["entities"]
+            self._relations = data["relations"]
+            self._name_index = defaultdict(list, data["name_index"])
+            self._type_index = defaultdict(list, data["type_index"])
+            self._fingerprint_index = defaultdict(list, data["fingerprint_index"])
+            self._source_index = defaultdict(list, data["source_index"])
+            self._target_index = defaultdict(list, data["target_index"])
+
+            stats = self.get_stats()
+            logger.info(f"Graph geladen: {filepath} "
+                       f"({stats['valid_entities']} Entities, "
+                       f"{stats['valid_relations']} Relations)")
+            logger.info(f"  Gespeichert am: {data.get('saved_at', 'unbekannt')}")
+            return True
+
+        except Exception as e:
+            logger.error(f"Fehler beim Laden: {e}")
+            return False
+
+    @staticmethod
+    def exists(path: str) -> bool:
+        """Prüft ob eine gespeicherte Baseline existiert."""
+        return Path(path).exists()
 
     def __len__(self) -> int:
         """Anzahl der Entitäten."""

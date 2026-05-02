@@ -1,0 +1,26 @@
+{
+  "timestamp": "2026-02-23T01:23:48.597136",
+  "avg_f1": 0.7692307692307693,
+  "avg_accuracy": 0.7857142857142857,
+  "generalization_score": 0.0,
+  "datasets": [
+    {
+      "dataset_name": "fever",
+      "total_triples": 14,
+      "accepted": 6,
+      "rejected": 8,
+      "needs_review": 0,
+      "acceptance_rate": 0.42857142857142855,
+      "avg_confidence": 0.39200827019555234,
+      "processing_time_s": 4.073170900344849,
+      "true_positives": 5,
+      "false_positives": 3,
+      "true_negatives": 6,
+      "false_negatives": 0,
+      "precision": 0.625,
+      "recall": 1.0,
+      "f1_score": 0.7692307692307693,
+      "accuracy": 0.7857142857142857
+    }
+  ]
+}

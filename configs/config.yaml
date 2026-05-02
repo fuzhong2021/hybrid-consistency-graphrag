@@ -1,4 +1,18 @@
 # GraphRAG Pipeline Configuration
+#
+# STATUS: Pipeline-Skizze, NICHT verbindlich für das Konsistenzmodul.
+#
+# - Diese Datei beschreibt die geplante GraphRAG-Pipeline (LLM-Provider,
+#   Embedding, Chunking, Retrieval) und wurde für ein zukünftiges
+#   End-to-End-System entworfen.
+# - Das aktuell evaluierte Konsistenzmodul liest diese YAML NICHT.
+# - Verbindliche Konfiguration: src/consistency/base.py::ConsistencyConfig
+#   und die inline-Config in evaluation/multi_dataset_evaluation.py
+#   (siehe README, Abschnitt "Konfiguration").
+# - Die hier gelisteten Relationstypen (deutsch) sind eine reduzierte
+#   Beispielmenge; in den Evaluationen wird ein erweiterter Satz aus
+#   englischen Benchmark-Relationen + deutschen Standard-Relationen
+#   verwendet.
 
 llm:
   provider: "openai"  # oder "local" für Ollama

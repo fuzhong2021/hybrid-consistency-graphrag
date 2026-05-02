@@ -1,0 +1,80 @@
+{
+  "fever": {
+    "mcnemar": {
+      "statistic": -291.0,
+      "p_value": 4.803301692894715e-67,
+      "b": 22,
+      "c": 313,
+      "better_model": "B",
+      "significant_0.05": true,
+      "significant_0.01": true,
+      "interpretation": "Sehr signifikant (p < 0.001): Modelle unterscheiden sich stark"
+    },
+    "ece_a": {
+      "n": 1293,
+      "ece": 0.3967598410483948,
+      "mce": 0.8390106929071022,
+      "brier": 0.45600811147150855,
+      "interpretation": "poor"
+    },
+    "ece_b": {
+      "n": 1293,
+      "ece": 0.2677568445475638,
+      "mce": 0.3374485596707819,
+      "brier": 0.31682151944315545,
+      "interpretation": "poor"
+    }
+  },
+  "hotpotqa": {
+    "mcnemar": {
+      "statistic": -419.0,
+      "p_value": 2.3952480335329708e-67,
+      "b": 107,
+      "c": 526,
+      "better_model": "B",
+      "significant_0.05": true,
+      "significant_0.01": true,
+      "interpretation": "Sehr signifikant (p < 0.001): Modelle unterscheiden sich stark"
+    },
+    "ece_a": {
+      "n": 7905,
+      "ece": 0.21710566686226088,
+      "mce": 0.5903999999999998,
+      "brier": 0.19141171302531654,
+      "interpretation": "poor"
+    },
+    "ece_b": {
+      "n": 7905,
+      "ece": 0.3205718469323214,
+      "mce": 0.652605633802817,
+      "brier": 0.24381742776865908,
+      "interpretation": "poor"
+    }
+  },
+  "musique": {
+    "mcnemar": {
+      "statistic": -448.0,
+      "p_value": 2.7107244312069706e-52,
+      "b": 227,
+      "c": 675,
+      "better_model": "B",
+      "significant_0.05": true,
+      "significant_0.01": true,
+      "interpretation": "Sehr signifikant (p < 0.001): Modelle unterscheiden sich stark"
+    },
+    "ece_a": {
+      "n": 10484,
+      "ece": 0.18953166768082408,
+      "mce": 0.6237626651982379,
+      "brier": 0.19195421639071175,
+      "interpretation": "poor"
+    },
+    "ece_b": {
+      "n": 10484,
+      "ece": 0.28505286567626864,
+      "mce": 0.6661790393013101,
+      "brier": 0.23608035123104626,
+      "interpretation": "poor"
+    }
+  }
+}
